@@ -256,7 +256,9 @@ class CircleWall:
 pygame.midi.init()
 # ... (Code to list devices, select MIDI_DEVICE_ID, open midi_output) ...
 # ... (Make sure midi_output is None if opening fails) ...
-midi_output = None
+print(pygame.midi.get_default_output_id())
+print( pygame.midi.get_device_info(0))
+midi_output = pygame.midi.Output(0)
 if midi_output:
      midi_output.set_instrument(MIDI_INSTRUMENT, channel=0)
 
