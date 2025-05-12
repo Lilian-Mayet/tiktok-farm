@@ -444,37 +444,7 @@ def main():
                                 if not circle_broken_this_frame: # Le cercle n'a pas déjà été cassé CETTE FRAME
 
 
-                                    # --- !!! MIDI NOTE PLAYBACK (FROM FILE SEQUENCE) !!! ---
-                                    if midi_output and current_note_index < len(loaded_notes):
-                                        try:
-                                            # Get the next note event from the loaded list
-                                            note_event = loaded_notes[current_note_index]
-                                            note_to_play = note_event['note']
-
-                                            # --- MODIFICATION ---
-                                            # ALWAYS use the fixed, constant velocity,
-                                            # IGNORING the velocity stored in note_event['velocity'].
-                                            velocity_to_play = MIDI_PLAYBACK_VELOCITY
-                                            # --- END MODIFICATION ---
-
-                                            # Clamp just in case, to ensure it's valid (1-127)
-                                            velocity_to_play = max(1, min(127, velocity_to_play))
-                        
-                                            # Updated print statement to reflect fixed velocity is used
-                                            print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, FIXED Vel={velocity_to_play}")
-                                            
-                                            # Send Note On using the FIXED velocity
-                                            midi_output.note_on(note_to_play, velocity_to_play, channel=0)
-                                            midi_output.note_off(note_to_play, 0, channel=0) # Immediate note off
-
-                                            # Move to the next note in the sequence
-                                            current_note_index += 1
-
-                                        except Exception as e:
-                                                print(f"Error playing MIDI note: {e}")
-                                    elif midi_output and current_note_index >= len(loaded_notes):
-                                        print("End of MIDI file notes reached.")
-                                    # --- !!! END MIDI NOTE PLAYBACK !!! ---    
+                                   
 
 
 
@@ -529,6 +499,37 @@ def main():
                                 overlap = dist - collision_dist
                                 ball.x -= overlap * nx
                                 ball.y -= overlap * ny
+                                # --- !!! MIDI NOTE PLAYBACK (FROM FILE SEQUENCE) !!! ---
+                                if midi_output and current_note_index < len(loaded_notes):
+                                    try:
+                                        # Get the next note event from the loaded list
+                                        note_event = loaded_notes[current_note_index]
+                                        note_to_play = note_event['note']
+
+                                        # --- MODIFICATION ---
+                                        # ALWAYS use the fixed, constant velocity,
+                                        # IGNORING the velocity stored in note_event['velocity'].
+                                        velocity_to_play = MIDI_PLAYBACK_VELOCITY
+                                        # --- END MODIFICATION ---
+
+                                        # Clamp just in case, to ensure it's valid (1-127)
+                                        velocity_to_play = max(1, min(127, velocity_to_play))
+                    
+                                        # Updated print statement to reflect fixed velocity is used
+                                        print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, FIXED Vel={velocity_to_play}")
+                                        
+                                        # Send Note On using the FIXED velocity
+                                        midi_output.note_on(note_to_play, velocity_to_play, channel=0)
+                                        midi_output.note_off(note_to_play, 0, channel=0) # Immediate note off
+
+                                        # Move to the next note in the sequence
+                                        current_note_index += 1
+
+                                    except Exception as e:
+                                            print(f"Error playing MIDI note: {e}")
+                                elif midi_output and current_note_index >= len(loaded_notes):
+                                    print("End of MIDI file notes reached.")
+                                # --- !!! END MIDI NOTE PLAYBACK !!! ---    
 
             # Fin de la boucle sur les balles. Si un cercle a été cassé, appliquer les target_radius.
             if circle_broken_this_frame:
