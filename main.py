@@ -11,7 +11,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 50, 50)       # Player 1 color
 BLUE = (50, 150, 255)     # Player 2 color
-CIRCLE_COLOR = (200, 200, 200) # Circle wall color
+CIRCLE_COLOR = (255, 255, 255) # Circle wall color
 OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
 
@@ -22,7 +22,7 @@ NUM_CIRCLES = 20
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
 RADIUS_STEP = 35
-CIRCLE_THICKNESS = 5
+CIRCLE_THICKNESS = 7
 GAP_PERCENTAGE = 0.15
 GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
@@ -32,8 +32,8 @@ FPS = 60
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
 
 # Particle Effect Constantes
-NUM_PARTICLES_ON_BREAK = 50
-PARTICLE_LIFETIME = 10 # seconds
+NUM_PARTICLES_ON_BREAK = 120
+PARTICLE_LIFETIME = 1 # seconds
 PARTICLE_MAX_SPEED = 100
 
 # --- Initialisation Pygame ---
@@ -132,8 +132,8 @@ class Ball:
         if dot_product > 0: # Moving towards the outside normal
              reflect_vx = self.vx - 2 * dot_product * nx
              reflect_vy = self.vy - 2 * dot_product * ny
-             self.vx = reflect_vx
-             self.vy = reflect_vy
+             self.vx = reflect_vx*1.0001#correct speed loss bug
+             self.vy = reflect_vy*1.0001
 
     def get_pos(self):
         return self.x, self.y
