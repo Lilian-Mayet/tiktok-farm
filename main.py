@@ -23,6 +23,7 @@ MIDI_DEVICE_ID = None # Keep device selection as before
 MIDI_INSTRUMENT = 0   # Still useful to set initially
 MIDI_FILENAME = "midiFiles/MarioBros.mid" # <-- ADD THIS - Change if your file has a different name
 MIDI_VELOCITY_FALLBACK = 100 # Velocity to use if MIDI file velocity is weird (optional)
+MIDI_PLAYBACK_VELOCITY = 160
 
 BALL_RADIUS = 9
 BALL_OUTLINE_WIDTH = 1
@@ -195,7 +196,7 @@ class Ball:
             # --- AJOUT : Ré-normaliser à la vitesse d'origine ---
             # Calculer la vitesse résultante de la formule de réflexion
             speed_after_reflection_calc = math.sqrt(reflect_vx**2 + reflect_vy**2)
-            print(speed_after_reflection_calc)
+
             # Éviter la division par zéro si la vitesse devient nulle (peu probable ici)
             if speed_after_reflection_calc < speed_before_reflection: # Utiliser une petite tolérance
                 # Calculer le facteur d'échelle pour retrouver la vitesse d'origine
@@ -407,22 +408,30 @@ def main():
                                             # Get the next note event from the loaded list
                                             note_event = loaded_notes[current_note_index]
                                             note_to_play = note_event['note']
-                                            # Use velocity from the file, or fallback
-                                            velocity_to_play = note_event.get('velocity', MIDI_VELOCITY_FALLBACK)
-                                            # Ensure velocity is valid
+
+                                            # --- MODIFICATION ---
+                                            # ALWAYS use the fixed, constant velocity,
+                                            # IGNORING the velocity stored in note_event['velocity'].
+                                            velocity_to_play = MIDI_PLAYBACK_VELOCITY
+                                            # --- END MODIFICATION ---
+
+                                            # Clamp just in case, to ensure it's valid (1-127)
                                             velocity_to_play = max(1, min(127, velocity_to_play))
 
-                                            print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, Vel={velocity_to_play}")
+                                            # Updated print statement to reflect fixed velocity is used
+                                            print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, FIXED Vel={velocity_to_play}")
+                                            
+                                            # Send Note On using the FIXED velocity
                                             midi_output.note_on(note_to_play, velocity_to_play, channel=0)
                                             midi_output.note_off(note_to_play, 0, channel=0) # Immediate note off
 
-                                            # Move to the next note in the sequence for the next break
+                                            # Move to the next note in the sequence
                                             current_note_index += 1
 
                                         except Exception as e:
-                                             print(f"Error playing MIDI note: {e}")
+                                                print(f"Error playing MIDI note: {e}")
                                     elif midi_output and current_note_index >= len(loaded_notes):
-                                         print("End of MIDI file notes reached.")
+                                        print("End of MIDI file notes reached.")
                                     # --- !!! END MIDI NOTE PLAYBACK !!! ---    
 
 
