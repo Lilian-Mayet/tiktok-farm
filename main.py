@@ -12,27 +12,28 @@ BLACK = (0, 0, 0)
 RED = (255, 50, 50)       # Player 1 color
 BLUE = (50, 150, 255)     # Player 2 color
 CIRCLE_COLOR = (200, 200, 200) # Circle wall color
-OUTLINE_COLOR = (50, 50, 50)   # Ball outline color
+OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
 
 BALL_RADIUS = 9
-BALL_OUTLINE_WIDTH = 2
-INITIAL_BALL_SPEED = 160
-NUM_CIRCLES = 16
+BALL_OUTLINE_WIDTH = 1
+INITIAL_BALL_SPEED = 180
+NUM_CIRCLES = 20
 INITIAL_RADIUS = 90
-RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
+#RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
+RADIUS_STEP = 35
 CIRCLE_THICKNESS = 5
 GAP_PERCENTAGE = 0.15
 GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
-BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 6 # Slightly slower rotation
-CIRCLE_SHRINK_SPEED = 45.0 # Shrink speed
+BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 7 # Slightly slower rotation
+CIRCLE_SHRINK_SPEED = 30.0 # Shrink speed
 FPS = 60
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
 
 # Particle Effect Constantes
 NUM_PARTICLES_ON_BREAK = 50
-PARTICLE_LIFETIME = 3 # seconds
+PARTICLE_LIFETIME = 10 # seconds
 PARTICLE_MAX_SPEED = 100
 
 # --- Initialisation Pygame ---
@@ -55,6 +56,15 @@ def is_angle_in_gap(angle_rad, gap_center_rad, gap_width_rad):
     if gap_start > gap_end: return norm_angle >= gap_start or norm_angle <= gap_end
     else: return gap_start <= norm_angle <= gap_end
 
+def calculate_rotation_speed(index, total_initial_circles):
+    """Calcule la vitesse de rotation basée sur l'index (0 = plus rapide)."""
+    direction = 1 if index % 2 == 0 else -1
+    # Modificateur: plus l'index est petit (proche du centre), plus c'est rapide
+    # Utilise une base relative au nombre total de cercles pour la cohérence
+    # L'ancien calcul était `1 + (NUM_CIRCLES - 1 - i) * factor`
+    speed_modifier = 1.0 + (total_initial_circles - 1 - index) * 0.15 # Ajuster le facteur 0.15 si besoin
+    speed_modifier = max(0.2, speed_modifier) # Vitesse minimale
+    return direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
     def __init__(self, x, y, color):
@@ -67,24 +77,29 @@ class Particle:
         self.vx = speed * math.cos(angle)
         self.vy = speed * math.sin(angle)
         self.lifetime = PARTICLE_LIFETIME
-        self.size = random.randint(1, 5)
+
+        self.initial_size = random.randint(1, 5) 
+        self.size = float(self.initial_size) # Stocker en float pour la précision
 
     def update(self, dt):
         self.x += self.vx * dt
         self.y += self.vy * dt
         # Optional: Add gravity to particles too?
-        # self.vy += GRAVITY_ACCELERATION * 0.5 * dt # Less gravity for particles
+        self.vy += GRAVITY_ACCELERATION * 0.5 * dt # Less gravity for particles
         self.lifetime -= dt
         # Fade out (simple size reduction)
-        self.size = max(0, int(self.size * (self.lifetime / PARTICLE_LIFETIME)))
+                # Calculer la taille proportionnellement au temps restant, basé sur la taille initiale
+        if self.lifetime > 0 and PARTICLE_LIFETIME > 0:
+            lerp_factor = max(0, self.lifetime / PARTICLE_LIFETIME) # 1.0 -> 0.0
+            self.size = self.initial_size * lerp_factor
+        else:
+            self.size = 0 # Assurer la disparition
 
 
     def draw(self, surface):
-        if self.lifetime > 0 and self.size > 0:
-             # Simple square particle
-             pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), self.size, self.size))
-             # Or circle particle:
-             # pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.size // 2)
+        draw_size = int(self.size)
+        if draw_size > 0:
+             pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), draw_size, draw_size))
 
 
 class Ball:
@@ -212,13 +227,15 @@ def main():
     balls.append(ball2)
 
     circles = []
-    for i in range(NUM_CIRCLES):
+    total_initial_circles = NUM_CIRCLES # Stocker le nombre initial
+
+    for i in range(total_initial_circles):
         radius = INITIAL_RADIUS + i * RADIUS_STEP
-        direction = 1 if i % 2 == 0 else -1
-        speed_modifier = 1 + (NUM_CIRCLES - 1 - i) * 0.05 # Subtle variation
-        rotation_speed = direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
-        # Stagger initial gaps more
-        initial_gap = INITIAL_GAP_CENTER_ANGLE_RAD + i * math.pi / (NUM_CIRCLES/2)
+        # --- MODIFICATION ---
+        # Utiliser la nouvelle fonction pour calculer la vitesse initiale
+        rotation_speed = calculate_rotation_speed(i, total_initial_circles)
+        # --- FIN MODIFICATION ---
+        initial_gap = INITIAL_GAP_CENTER_ANGLE_RAD + i * math.pi / (total_initial_circles / 1.5) # Stagger un peu plus
         circle = CircleWall(CENTER_X, CENTER_Y, radius, CIRCLE_COLOR, CIRCLE_THICKNESS,
                             initial_gap, GAP_ANGLE_RAD, rotation_speed)
         circles.append(circle)
@@ -297,9 +314,13 @@ def main():
 
                                     # Préparer l'ajustement des rayons pour PLUS TARD (après la boucle des balles)
                                     if circles:
+                                        next_updates = {}
                                         for i, circle_to_update in enumerate(circles):
                                             target_radius = INITIAL_RADIUS + i * RADIUS_STEP
-                                            next_target_radius_map[circle_to_update] = target_radius
+                                            # Calculer la NOUVELLE vitesse basée sur le nouvel index 'i'
+                                            new_rotation_speed = calculate_rotation_speed(i, total_initial_circles)
+                                            # Stocker les deux mises à jour
+                                            next_updates[circle_to_update] = {'radius': target_radius, 'speed': new_rotation_speed}
 
                                 # Important: même si le cercle est cassé, la balle continue sa trajectoire
                                 # sans rebondir pour cette frame si elle est dans le gap et sortante.
@@ -324,9 +345,13 @@ def main():
 
             # Fin de la boucle sur les balles. Si un cercle a été cassé, appliquer les target_radius.
             if circle_broken_this_frame:
-                 for circle, target in next_target_radius_map.items():
-                     circle.set_target_radius(target)
+                 # Appliquer les mises à jour stockées
+                 for circle, updates in next_updates.items():
+                     circle.set_target_radius(updates['radius'])
+                     # Définir directement la nouvelle vitesse de rotation
+                     circle.rotation_speed = updates['speed']
 
+        
 
         # --- Dessin ---
         screen.fill(BLACK)
