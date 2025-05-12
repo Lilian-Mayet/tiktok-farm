@@ -22,6 +22,7 @@ GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
 BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 4
 FPS = 60
+GRAVITY_ACCELERATION = 400.0 # Pixels par seconde^2 (Ajustez cette valeur !)
 
 # --- Initialisation Pygame (Identique) ---
 pygame.init()
@@ -57,6 +58,8 @@ class Ball:
         self.vy = float(initial_vy)
 
     def update(self, dt):
+
+        self.vy += GRAVITY_ACCELERATION * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
 
