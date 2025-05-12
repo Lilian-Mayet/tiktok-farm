@@ -27,7 +27,7 @@ MIDI_VELOCITY_FALLBACK = 100 # Velocity to use if MIDI file velocity is weird (o
 BALL_RADIUS = 9
 BALL_OUTLINE_WIDTH = 1
 INITIAL_BALL_SPEED = 180
-NUM_CIRCLES = 20
+NUM_CIRCLES = 150
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
 RADIUS_STEP = 35
@@ -35,8 +35,9 @@ CIRCLE_THICKNESS = 7
 GAP_PERCENTAGE = 0.15
 GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
-BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 7 # Slightly slower rotation
-CIRCLE_SHRINK_SPEED = 30.0 # Shrink speed
+BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 2 # Slightly slower rotation
+ROTATION_SLOWDOWN_FACTOR = 0.92
+CIRCLE_SHRINK_SPEED = 45.0 # Shrink speed
 FPS = 60
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
 
@@ -66,15 +67,23 @@ def is_angle_in_gap(angle_rad, gap_center_rad, gap_width_rad):
     if gap_start > gap_end: return norm_angle >= gap_start or norm_angle <= gap_end
     else: return gap_start <= norm_angle <= gap_end
 
-def calculate_rotation_speed(index, total_initial_circles):
-    """Calcule la vitesse de rotation basée sur l'index (0 = plus rapide)."""
-    direction = 1 if index % 2 == 0 else -1
-    # Modificateur: plus l'index est petit (proche du centre), plus c'est rapide
-    # Utilise une base relative au nombre total de cercles pour la cohérence
-    # L'ancien calcul était `1 + (NUM_CIRCLES - 1 - i) * factor`
-    speed_modifier = 1.0 + (total_initial_circles - 1 - index) * 0.15 # Ajuster le facteur 0.15 si besoin
-    speed_modifier = max(0.2, speed_modifier) # Vitesse minimale
-    return direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
+def calculate_rotation_speed_magnitude(index):
+    """
+    Calcule la MAGNITUDE de la vitesse de rotation.
+    Index 0 a la magnitude BASE_ROTATION_SPEED_RAD_PER_SEC.
+    Chaque cercle suivant (index > 0) est plus lent d'un facteur ROTATION_SLOWDOWN_FACTOR.
+    """
+    # Calculer la magnitude de la vitesse
+    # Pour index 0: factor ^ 0 = 1 -> speed = base_speed
+    # Pour index 1: factor ^ 1 = factor -> speed = base_speed * factor
+    # etc.
+    if ROTATION_SLOWDOWN_FACTOR >= 1.0 and index > 0:
+         print(f"Warning: ROTATION_SLOWDOWN_FACTOR ({ROTATION_SLOWDOWN_FACTOR}) >= 1.0, speed magnitude will not decrease for index {index}.")
+
+    speed_magnitude = BASE_ROTATION_SPEED_RAD_PER_SEC * (ROTATION_SLOWDOWN_FACTOR ** index)
+
+    # Retourner uniquement la magnitude (toujours positive)
+    return speed_magnitude
 
 # --- MIDI File Loading Function ---
 def load_midi_notes(filename):
@@ -188,7 +197,7 @@ class Ball:
 # --- Classe CircleWall (Inchangée par rapport à l'animation) ---
 class CircleWall:
     def __init__(self, center_x, center_y, radius, color, thickness,
-                 initial_gap_center_rad, gap_width_rad, rotation_speed):
+                 initial_gap_center_rad, gap_width_rad,initial_index, total_initial_circles):
         self.center_x = center_x
         self.center_y = center_y
         self.radius = float(radius)
@@ -196,7 +205,9 @@ class CircleWall:
         self.color = color
         self.thickness = thickness
         self.gap_width_rad = gap_width_rad
-        self.rotation_speed = rotation_speed
+        self.rotation_direction = 1 if initial_index % 2 == 0 else -1
+        initial_speed_magnitude = calculate_rotation_speed_magnitude(initial_index) # Utiliser la nouvelle fonction (voir étape 2)
+        self.rotation_speed = self.rotation_direction * initial_speed_magnitude
         self.gap_center_rad = normalize_angle(initial_gap_center_rad)
         self.shrink_speed = CIRCLE_SHRINK_SPEED
         self.arc_start_angle_pygame = 0
@@ -223,6 +234,8 @@ class CircleWall:
 
     def draw(self, surface):
         current_radius_int = int(self.radius)
+        if current_radius_int>500:
+            return #don't draw too large circle for performance
         if current_radius_int <= 0: return
         rect = pygame.Rect(self.center_x - current_radius_int, self.center_y - current_radius_int,
                            2 * current_radius_int, 2 * current_radius_int)
@@ -290,12 +303,13 @@ def main():
     for i in range(total_initial_circles):
         radius = INITIAL_RADIUS + i * RADIUS_STEP
         # --- MODIFICATION ---
-        # Utiliser la nouvelle fonction pour calculer la vitesse initiale
-        rotation_speed = calculate_rotation_speed(i, total_initial_circles)
+
         # --- FIN MODIFICATION ---
         initial_gap = INITIAL_GAP_CENTER_ANGLE_RAD + i * math.pi / (total_initial_circles / 1.5) # Stagger un peu plus
+        # Le constructeur CircleWall calcule maintenant la direction et la vitesse initiale
         circle = CircleWall(CENTER_X, CENTER_Y, radius, CIRCLE_COLOR, CIRCLE_THICKNESS,
-                            initial_gap, GAP_ANGLE_RAD, rotation_speed)
+                            initial_gap, GAP_ANGLE_RAD,
+                            i, total_initial_circles)
         circles.append(circle)
 
     particles = [] # Liste pour gérer les particules actives
@@ -403,10 +417,13 @@ def main():
                                         next_updates = {}
                                         for i, circle_to_update in enumerate(circles):
                                             target_radius = INITIAL_RADIUS + i * RADIUS_STEP
-                                            # Calculer la NOUVELLE vitesse basée sur le nouvel index 'i'
-                                            new_rotation_speed = calculate_rotation_speed(i, total_initial_circles)
+
+                                            # Calculer la NOUVELLE magnitude basée sur le nouvel index 'i'
+                                            new_speed_magnitude = calculate_rotation_speed_magnitude(i)
+                                            # Utiliser la direction STOCKÉE dans le cercle
+                                            new_full_speed = circle_to_update.rotation_direction * new_speed_magnitude
                                             # Stocker les deux mises à jour
-                                            next_updates[circle_to_update] = {'radius': target_radius, 'speed': new_rotation_speed}
+                                            next_updates[circle_to_update] = {'radius': target_radius, 'speed': new_full_speed}
 
                                 # Important: même si le cercle est cassé, la balle continue sa trajectoire
                                 # sans rebondir pour cette frame si elle est dans le gap et sortante.
