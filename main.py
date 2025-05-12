@@ -17,17 +17,31 @@ CIRCLE_COLOR = (255, 255, 255) # Circle wall color
 OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
 
+# --- TITLE CONSTANTS ---
+TITLE_TEXT = "Who will win?"
+TITLE_FONT_SIZE = 48
+TITLE_COLOR = WHITE
+TITLE_TOP_MARGIN = 15
+# --- END TITLE CONSTANTS ---
+
+# --- SCORE PARTICLE CONSTANTS ---
+NUM_SCORE_PARTICLES = 15
+SCORE_PARTICLE_LIFETIME = 0.4 # Shorter lifetime
+SCORE_PARTICLE_MAX_SPEED = 80
+SCORE_PARTICLE_COLOR = WHITE
+# --- END SCORE PARTICLE CONSTANTS ---
+
 
 # --- BANNER CONSTANTS ---
-BANNER_HEIGHT = 90  # INCREASED HEIGHT to fit name and score
-BANNER_ALPHA = 200   # Transparency (0=invisible, 255=opaque)
+BANNER_HEIGHT = 135  # INCREASED HEIGHT to fit name and score
+BANNER_ALPHA = 185   # Transparency (0=invisible, 255=opaque)
 BANNER_BG_COLOR = (30, 30, 30)
 BANNER_PADDING = 20 # Slightly more padding maybe
 BANNER_NAME_COLOR_P1 = RED
 BANNER_NAME_COLOR_P2 = BLUE
 BANNER_SCORE_COLOR = WHITE # Color for the score number
-BANNER_NAME_FONT_SIZE = 30
-BANNER_SCORE_FONT_SIZE = 45
+BANNER_NAME_FONT_SIZE = 35
+BANNER_SCORE_FONT_SIZE = 50
 BANNER_VERTICAL_SPACING = 2 # Small space between name and score
 # --- END BANNER CONSTANTS ---
 # --- MIDI Constants ---
@@ -131,40 +145,49 @@ def load_midi_notes(filename):
 
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
-    def __init__(self, x, y, color):
+    def __init__(self, x, y,has_gravity, random_color, color, lifetime=PARTICLE_LIFETIME, max_speed=PARTICLE_MAX_SPEED): # Add params
         self.x = float(x)
         self.y = float(y)
-        self.color = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
-        #self.color = color
+        # Allow specific color or random if original color passed
+        if random_color: # Check if it's the default break color
+             self.color = (random.randint(100,200), random.randint(100,200), random.randint(100,200)) # Varying grays
+        else:
+             self.color = color # Use specified color (e.g., WHITE for score)
+
         angle = random.uniform(0, 2 * math.pi)
-        speed = random.uniform(PARTICLE_MAX_SPEED * 0.5, PARTICLE_MAX_SPEED)
+        speed = random.uniform(max_speed * 0.2, max_speed) # Use max_speed param
         self.vx = speed * math.cos(angle)
         self.vy = speed * math.sin(angle)
-        self.lifetime = PARTICLE_LIFETIME
+        self.lifetime = lifetime # Use lifetime param
+        self.base_lifetime = lifetime # Store base for calculation
+        self.has_gravity = has_gravity
 
-        self.initial_size = random.randint(1, 5) 
-        self.size = float(self.initial_size) # Stocker en float pour la précision
+        self.initial_size = random.randint(2, 4)
+        self.size = float(self.initial_size)
 
     def update(self, dt):
         self.x += self.vx * dt
         self.y += self.vy * dt
-        # Optional: Add gravity to particles too?
-        self.vy += GRAVITY_ACCELERATION * 0.5 * dt # Less gravity for particles
+
+        if self.has_gravity :
+            self.vy += GRAVITY_ACCELERATION * 0.5 * dt
+        
         self.lifetime -= dt
-        # Fade out (simple size reduction)
-                # Calculer la taille proportionnellement au temps restant, basé sur la taille initiale
-        if self.lifetime > 0 and PARTICLE_LIFETIME > 0:
-            lerp_factor = max(0, self.lifetime / PARTICLE_LIFETIME) # 1.0 -> 0.0
+
+        if self.lifetime > 0 and self.base_lifetime > 0:
+            lerp_factor = max(0, self.lifetime / self.base_lifetime)
             self.size = self.initial_size * lerp_factor
         else:
-            self.size = 0 # Assurer la disparition
-
+            self.size = 0
 
     def draw(self, surface):
         draw_size = int(self.size)
         if draw_size > 0:
-             pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), draw_size, draw_size))
-
+             # Use a circle for score particles maybe? Looks softer.
+             if self.color == SCORE_PARTICLE_COLOR:
+                 pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), draw_size // 2 + 1)
+             else: # Rect for break particles
+                 pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), draw_size, draw_size))
 
 class Ball:
     def __init__(self, x, y, radius, color, outline_color, outline_width, name, initial_vx, initial_vy):
@@ -179,6 +202,7 @@ class Ball:
         self.vy = float(initial_vy)
         initial_speed_sq = self.vx**2 + self.vy**2
         initial_ke = 0.5 * initial_speed_sq
+        self.just_scored = False
         # Énergie Potentielle Initiale (PE = m * g * h, on prend m=1, h = -y par rapport au haut de l'écran)
         # Utiliser g = GRAVITY_ACCELERATION. PE est négative car Y augmente vers le bas.
         initial_pe = -GRAVITY_ACCELERATION * self.y
@@ -262,6 +286,7 @@ class Ball:
 
     def add_score(self, points=1):
         self.score += points
+        self.just_scored = True
 
 # --- Classe CircleWall (Inchangée par rapport à l'animation) ---
 class CircleWall:
@@ -355,6 +380,14 @@ def main():
      # --- Create Banner Fonts ---
     banner_name_font = pygame.font.Font(None, BANNER_NAME_FONT_SIZE)
     banner_score_font = pygame.font.Font(None, BANNER_SCORE_FONT_SIZE)
+
+    # --- ADD TITLE FONT ---
+    title_font = pygame.font.Font(None, TITLE_FONT_SIZE)
+    # --- END TITLE FONT ---
+
+    # --- Render Title (Do this once) ---
+    title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
+    title_rect = title_surf.get_rect(centerx=SCREEN_WIDTH // 2, top=TITLE_TOP_MARGIN)
 
 
     # --- Création des objets ---
@@ -460,7 +493,7 @@ def main():
                                         p_angle = random.uniform(0, 2*math.pi)
                                         px = broken_circle_center_x + broken_circle_radius * math.cos(p_angle)
                                         py = broken_circle_center_y - broken_circle_radius * math.sin(p_angle) # Y down
-                                        particles.append(Particle(px, py, PARTICLE_COLOR))
+                                        particles.append(Particle(px, py,has_gravity=True,random_color=True, color  = None))
 
 
                                     circles.pop(0)
@@ -543,6 +576,9 @@ def main():
 
         # --- Dessin ---
         screen.fill(BLACK)
+        # --- Draw Title ---
+        screen.blit(title_surf, title_rect)
+        # --- End Draw Title ---
 
         # Dessiner les cercles
         for circle in circles:
@@ -589,8 +625,28 @@ def main():
         p2_score_rect = p2_score_surf.get_rect(topright=(p2_name_rect.right, p2_name_rect.bottom + BANNER_VERTICAL_SPACING))
         banner_surface.blit(p2_score_surf, p2_score_rect)
 
-       
+        # --- !! SCORE PARTICLE TRIGGER !! ---
+        # Check AFTER drawing the banner and calculating score rects
+        banner_y_offset = SCREEN_HEIGHT - BANNER_HEIGHT
 
+        # Player 1 Score Particles
+        if balls[0].just_scored:
+            # Spawn particles around the center of the score text
+            center_x = p1_score_rect.centerx
+            center_y = banner_y_offset + p1_score_rect.centery # Add banner offset
+            for _ in range(NUM_SCORE_PARTICLES):
+                 # Use specific score particle properties
+                 particles.append(Particle(center_x, center_y,  has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR))
+            balls[0].just_scored = False # Reset flag
+
+        # Player 2 Score Particles
+        if balls[1].just_scored:
+            center_x = p2_score_rect.centerx
+            center_y = banner_y_offset + p2_score_rect.centery # Add banner offset
+            for _ in range(NUM_SCORE_PARTICLES):
+                 particles.append(Particle(center_x, center_y, has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR))
+            balls[1].just_scored = False # Reset flag
+        # --- !! END SCORE PARTICLE TRIGGER !! ---
         # --- Blit the transparent banner onto the main screen ---
         screen.blit(banner_surface, (0, SCREEN_HEIGHT - BANNER_HEIGHT))
         # --- Fin Dessin Bandeau ---
