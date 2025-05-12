@@ -8,7 +8,7 @@ import mido  # <-- ADD THIS
 # --- Constantes ---
 SCREEN_WIDTH = 450
 SCREEN_HEIGHT = 800
-CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2.4
+CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2.8
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 50, 50)       # Player 1 color
@@ -18,6 +18,18 @@ OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
 
 
+# --- BANNER CONSTANTS ---
+BANNER_HEIGHT = 90  # INCREASED HEIGHT to fit name and score
+BANNER_ALPHA = 200   # Transparency (0=invisible, 255=opaque)
+BANNER_BG_COLOR = (30, 30, 30)
+BANNER_PADDING = 20 # Slightly more padding maybe
+BANNER_NAME_COLOR_P1 = RED
+BANNER_NAME_COLOR_P2 = BLUE
+BANNER_SCORE_COLOR = WHITE # Color for the score number
+BANNER_NAME_FONT_SIZE = 30
+BANNER_SCORE_FONT_SIZE = 45
+BANNER_VERTICAL_SPACING = 2 # Small space between name and score
+# --- END BANNER CONSTANTS ---
 # --- MIDI Constants ---
 MIDI_DEVICE_ID = None # Keep device selection as before
 MIDI_INSTRUMENT = 0   # Still useful to set initially
@@ -337,6 +349,13 @@ def main():
     # --- Load MIDI Notes Sequence ---
     loaded_notes = load_midi_notes(MIDI_FILENAME)
     current_note_index = 1 # Index for the next note to play from the loaded sequence
+    # --- Create Banner Surface ---
+    banner_surface = pygame.Surface((SCREEN_WIDTH, BANNER_HEIGHT), pygame.SRCALPHA)
+    TRANSPARENT_BANNER_BG = (*BANNER_BG_COLOR, BANNER_ALPHA)
+     # --- Create Banner Fonts ---
+    banner_name_font = pygame.font.Font(None, BANNER_NAME_FONT_SIZE)
+    banner_score_font = pygame.font.Font(None, BANNER_SCORE_FONT_SIZE)
+
 
     # --- Création des objets ---
     balls = []
@@ -536,19 +555,48 @@ def main():
         for ball in balls:
             ball.draw(screen)
 
-        # Dessiner les scores
-        # Player 1 (Gauche)
-        score_surf_p1 = score_font.render(f"{balls[0].name}: {balls[0].score}", True, WHITE)
-        score_rect_p1 = score_surf_p1.get_rect(topleft=(15, 10))
-        screen.blit(score_surf_p1, score_rect_p1)
-
-        # Player 2 (Droite)
-        score_surf_p2 = score_font.render(f"{balls[1].name}: {balls[1].score}", True, WHITE)
-        score_rect_p2 = score_surf_p2.get_rect(topright=(SCREEN_WIDTH - 15, 10))
-        screen.blit(score_surf_p2, score_rect_p2)
+       # --- Préparer et Dessiner le Bandeau ---
+        # 1. Fill banner background (will be made transparent later)
+        banner_surface.fill(TRANSPARENT_BANNER_BG)
 
 
-        pygame.display.flip() # Mettre à jour l'affichage
+        # --- Player 1 Display (Left) ---
+        # Render Name
+        p1_name_text = balls[0].name
+        p1_name_surf = banner_name_font.render(p1_name_text, True, BANNER_NAME_COLOR_P1)
+        p1_name_rect = p1_name_surf.get_rect(topleft=(BANNER_PADDING, BANNER_PADDING // 2)) # Position name near top-left
+        banner_surface.blit(p1_name_surf, p1_name_rect)
+
+        # Render Score (Below Name)
+        p1_score_text = str(balls[0].score)
+        p1_score_surf = banner_score_font.render(p1_score_text, True, BANNER_SCORE_COLOR)
+        # Position score's top-left below name's bottom-left
+        p1_score_rect = p1_score_surf.get_rect(topleft=(p1_name_rect.left, p1_name_rect.bottom + BANNER_VERTICAL_SPACING))
+        banner_surface.blit(p1_score_surf, p1_score_rect)
+
+        # --- Player 2 Display (Right) ---
+        # Render Name
+        p2_name_text = balls[1].name
+        p2_name_surf = banner_name_font.render(p2_name_text, True, BANNER_NAME_COLOR_P2)
+        p2_name_rect = p2_name_surf.get_rect(topright=(SCREEN_WIDTH - BANNER_PADDING, BANNER_PADDING // 2)) # Position name near top-right
+        banner_surface.blit(p2_name_surf, p2_name_rect)
+
+        # Render Score (Below Name)
+        p2_score_text = str(balls[1].score)
+        p2_score_surf = banner_score_font.render(p2_score_text, True, BANNER_SCORE_COLOR)
+        # Position score's top-right below name's bottom-right
+        p2_score_rect = p2_score_surf.get_rect(topright=(p2_name_rect.right, p2_name_rect.bottom + BANNER_VERTICAL_SPACING))
+        banner_surface.blit(p2_score_surf, p2_score_rect)
+
+       
+
+        # --- Blit the transparent banner onto the main screen ---
+        screen.blit(banner_surface, (0, SCREEN_HEIGHT - BANNER_HEIGHT))
+        # --- Fin Dessin Bandeau ---
+
+        # --- Make sure old score drawing is removed ---
+
+        pygame.display.flip()
 
     # --- Fin ---
     pygame.quit()
