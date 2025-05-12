@@ -178,12 +178,45 @@ class Ball:
         pygame.draw.circle(surface, self.color, pos, self.radius)
 
     def reflect_velocity(self, nx, ny):
+        """ Réfléchit la vitesse et assure la conservation de l'énergie cinétique (vitesse). """
+        # Calculer le produit scalaire (vitesse projetée sur la normale)
         dot_product = self.vx * nx + self.vy * ny
-        if dot_product > 0: # Moving towards the outside normal
-             reflect_vx = self.vx - 2 * dot_product * nx
-             reflect_vy = self.vy - 2 * dot_product * ny
-             self.vx = reflect_vx*1.0001#correct speed loss bug
-             self.vy = reflect_vy*1.0001
+
+        # Ne réfléchir que si la balle va VERS le mur (produit scalaire > 0 car la normale pointe vers l'extérieur)
+        if dot_product > 0:
+            # --- AJOUT : Sauvegarder la vitesse avant réflexion ---
+            speed_before_reflection = math.sqrt(self.vx**2 + self.vy**2)
+            # --- FIN AJOUT ---
+
+            # Calculer la vitesse réfléchie idéale (formule standard)
+            reflect_vx = self.vx - 2 * dot_product * nx
+            reflect_vy = self.vy - 2 * dot_product * ny
+
+            # --- AJOUT : Ré-normaliser à la vitesse d'origine ---
+            # Calculer la vitesse résultante de la formule de réflexion
+            speed_after_reflection_calc = math.sqrt(reflect_vx**2 + reflect_vy**2)
+            print(speed_after_reflection_calc)
+            # Éviter la division par zéro si la vitesse devient nulle (peu probable ici)
+            if speed_after_reflection_calc < speed_before_reflection: # Utiliser une petite tolérance
+                # Calculer le facteur d'échelle pour retrouver la vitesse d'origine
+                scale_factor = speed_before_reflection / speed_after_reflection_calc
+                # Appliquer l'échelle
+   
+                final_vx = reflect_vx * (scale_factor)
+                final_vy = reflect_vy * (scale_factor)
+            else:
+                # Si la vitesse calculée est quasi nulle, utiliser la vitesse réfléchie brute
+                # ou mettre à zéro si speed_before_reflection était aussi nulle
+                if speed_before_reflection < 1e-6:
+                    final_vx, final_vy = 0.0, 0.0
+                else:
+                    # Ce cas est étrange, mais on garde la direction réfléchie si possible
+                    final_vx, final_vy = reflect_vx, reflect_vy
+
+            # Assigner la vitesse finale corrigée
+            self.vx = final_vx
+            self.vy = final_vy
+            # --- FIN AJOUT ---
 
     def get_pos(self):
         return self.x, self.y
@@ -279,7 +312,7 @@ if midi_output:
 def main():
     # --- Load MIDI Notes Sequence ---
     loaded_notes = load_midi_notes(MIDI_FILENAME)
-    current_note_index = 0 # Index for the next note to play from the loaded sequence
+    current_note_index = 3 # Index for the next note to play from the loaded sequence
 
     # --- Création des objets ---
     balls = []
@@ -346,13 +379,13 @@ def main():
 
             for ball in balls:
                 # Vérifier la collision de CETTE balle avec le current_circle
-                collision_dist = current_circle.radius - ball.radius
+                collision_dist = (current_circle.radius - CIRCLE_THICKNESS/2) - ball.radius
                 dx = ball.x - current_circle.center_x
                 dy = ball.y - current_circle.center_y
                 dist_sq = dx*dx + dy*dy
 
                 # Optimization: check square distance first
-                if dist_sq >= collision_dist * collision_dist - 10 : # Check a bit before exact collision
+                if dist_sq >= collision_dist * collision_dist - 0.1 : # Check a bit before exact collision
                     dist = math.sqrt(dist_sq)
 
                     if dist >= collision_dist and dist > 1e-6:
