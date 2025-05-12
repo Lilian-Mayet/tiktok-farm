@@ -1,50 +1,36 @@
 import pygame
 import math
 import sys
-import random # Assurez-vous que random est importé
+import random
 
-# --- Constantes ---
-# Dimensions de l'écran (format TikTok : 9:16)
+# --- Constantes (Identiques à avant) ---
 SCREEN_WIDTH = 450
 SCREEN_HEIGHT = 800
 CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
-
-# Couleurs
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
-GRAY = (150, 150, 150)
-BLUE = (100, 100, 255) # Couleur pour les cercles
-
-# Paramètres de la balle
+BLUE = (100, 100, 255)
 BALL_RADIUS = 8
-INITIAL_BALL_SPEED = 250 # Pixels par seconde
-
-# Paramètres des cercles
-NUM_CIRCLES = 16 # 1 initial + 15 autour
+INITIAL_BALL_SPEED = 250
+NUM_CIRCLES = 16
 INITIAL_RADIUS = 40
-RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 3) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # Ajuste l'espacement
+RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 3) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0
 CIRCLE_THICKNESS = 3
-GAP_PERCENTAGE = 0.15 # 15% de la circonférence
+GAP_PERCENTAGE = 0.15
 GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
-# Orientation initiale de l'ouverture (ex: en haut)
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
-# Vitesse de rotation (radians par seconde). Positif = anti-horaire, Négatif = horaire
-# Mettons une vitesse de base, on pourra la varier pour chaque cercle
-BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 4 # Tour complet en 8 secondes
-
-# Physique et jeu
+BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 4
 FPS = 60
 
-# --- Initialisation Pygame ---
+# --- Initialisation Pygame (Identique) ---
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Balle dans Cercles Rotatifs")
 clock = pygame.time.Clock()
 
-# --- Fonctions Utilitaires (Gestion des angles) ---
+# --- Fonctions Utilitaires (Identiques) ---
 def normalize_angle(angle_rad):
-    """ Normalise un angle en radians dans l'intervalle [0, 2*pi) """
     while angle_rad < 0:
         angle_rad += 2 * math.pi
     while angle_rad >= 2 * math.pi:
@@ -52,17 +38,15 @@ def normalize_angle(angle_rad):
     return angle_rad
 
 def is_angle_in_gap(angle_rad, gap_center_rad, gap_width_rad):
-    """ Vérifie si un angle est dans l'ouverture """
     norm_angle = normalize_angle(angle_rad)
     gap_start = normalize_angle(gap_center_rad - gap_width_rad / 2)
     gap_end = normalize_angle(gap_center_rad + gap_width_rad / 2)
-
-    if gap_start > gap_end: # L'ouverture passe par 0 radians
+    if gap_start > gap_end:
         return norm_angle >= gap_start or norm_angle <= gap_end
-    else: # Ouverture "normale"
+    else:
         return gap_start <= norm_angle <= gap_end
 
-# --- Classe Ball (Inchangée) ---
+# --- Classe Ball (Identique) ---
 class Ball:
     def __init__(self, x, y, radius, color, initial_vx, initial_vy):
         self.x = float(x)
@@ -81,10 +65,18 @@ class Ball:
 
     def reflect_velocity(self, nx, ny):
         dot_product = self.vx * nx + self.vy * ny
-        # Prévenir les rebonds multiples si la balle est déjà en train de s'éloigner
-        if dot_product < 0: # Seulement si la balle va *vers* le mur
-             self.vx -= 2 * dot_product * nx
-             self.vy -= 2 * dot_product * ny
+        # On ne réfléchit que si la balle va VERS le mur (produit scalaire < 0)
+        if dot_product > 0: # Corrigé: Normal (nx,ny) pointe vers l'extérieur. Si v et n pointent dans la même direction générale (dot > 0), la balle s'éloigne déjà. On ne réfléchit que si elle va vers le centre (dot < 0). MAIS ATTENTION, la normale pour la REFLEXION doit être celle du point d'impact. Si la balle est à l'intérieur et touche, la normale pointe VERS L'EXTERIEUR (centre->balle). Si la balle va vers l'extérieur (vx*nx + vy*ny > 0), elle heurte le mur.
+            # Mise à jour: La réflexion doit se faire si la composante de vitesse normale est positive (allant vers l'extérieur).
+            # Formule: v' = v - 2 * proj_n(v) = v - 2 * dot(v, n) * n
+             reflect_vx = self.vx - 2 * dot_product * nx
+             reflect_vy = self.vy - 2 * dot_product * ny
+             # Vérification simple de changement de direction radiale
+             # new_dot = reflect_vx * nx + reflect_vy * ny
+             # if new_dot < 0: # S'assurer que la nouvelle vitesse va bien vers l'intérieur
+             self.vx = reflect_vx
+             self.vy = reflect_vy
+
 
     def get_pos(self):
         return self.x, self.y
@@ -92,7 +84,7 @@ class Ball:
     def get_velocity(self):
          return self.vx, self.vy
 
-# --- Classe CircleWall (Modifiée) ---
+# --- Classe CircleWall (Modification mineure: is_ball_in_gap prend l'angle) ---
 class CircleWall:
     def __init__(self, center_x, center_y, radius, color, thickness,
                  initial_gap_center_rad, gap_width_rad, rotation_speed):
@@ -102,97 +94,74 @@ class CircleWall:
         self.color = color
         self.thickness = thickness
         self.gap_width_rad = gap_width_rad
-        self.rotation_speed = rotation_speed # Vitesse de rotation en rad/s
-
-        # Angle courant du centre de l'ouverture (commence à l'initial)
+        self.rotation_speed = rotation_speed
         self.gap_center_rad = normalize_angle(initial_gap_center_rad)
-
-        # Initialiser les angles de dessin (seront mis à jour dans update)
         self.arc_start_angle_pygame = 0
         self.arc_end_angle_pygame = 0
-        self._recalculate_draw_angles() # Appel initial
+        self._recalculate_draw_angles()
 
     def _recalculate_draw_angles(self):
-        """ Recalcule les angles nécessaires pour pygame.draw.arc """
         gap_start_rad = normalize_angle(self.gap_center_rad - self.gap_width_rad / 2)
         gap_end_rad = normalize_angle(self.gap_center_rad + self.gap_width_rad / 2)
-
-        # Angles pour pygame.draw.arc (sens horaire Pygame, 0=droite)
-        # L'arc commence à la fin de l'ouverture et finit au début
         self.arc_start_angle_pygame = gap_end_rad
         self.arc_end_angle_pygame = gap_start_rad
 
     def update(self, dt):
-        """ Met à jour l'angle de l'ouverture et les angles de dessin """
         self.gap_center_rad += self.rotation_speed * dt
         self.gap_center_rad = normalize_angle(self.gap_center_rad)
-        # Recalculer les angles pour le dessin après la mise à jour de la position du gap
         self._recalculate_draw_angles()
 
     def draw(self, surface):
-        """ Dessine l'arc de cercle (le mur) """
         rect = pygame.Rect(self.center_x - self.radius, self.center_y - self.radius,
                            2 * self.radius, 2 * self.radius)
-        # Utilise les angles pré-calculés dans update
-        pygame.draw.arc(surface, self.color, rect,
-                        self.arc_start_angle_pygame,
-                        self.arc_end_angle_pygame,
-                        self.thickness)
+        # Éviter l'erreur si start == end après normalisation et flottants
+        if abs(self.arc_start_angle_pygame - self.arc_end_angle_pygame) < 0.001:
+             pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), self.radius, self.thickness)
+        else:
+             pygame.draw.arc(surface, self.color, rect,
+                             self.arc_start_angle_pygame,
+                             self.arc_end_angle_pygame,
+                             self.thickness)
 
-    def is_ball_in_gap(self, ball):
-        """ Vérifie si la position de la balle correspond à l'ouverture ACTUELLE du cercle """
-        dx = ball.x - self.center_x
-        dy = ball.y - self.center_y
-        # Angle de la balle par rapport au centre (convention mathématique standard)
-        ball_angle_math = math.atan2(-dy, dx)
-
-        # Vérifie si cet angle est dans l'ouverture ACTUELLE
+    # Prend directement l'angle calculé pour éviter recalcul
+    def is_angle_in_gap(self, ball_angle_math):
+        """ Vérifie si l'angle donné correspond à l'ouverture ACTUELLE du cercle """
+        # Utilise la fonction globale avec les paramètres actuels du cercle
         return is_angle_in_gap(ball_angle_math, self.gap_center_rad, self.gap_width_rad)
 
-# --- Logique Principale (Modifiée) ---
+
+# --- Logique Principale (CORRIGÉE) ---
 def main():
-    # --- Création des objets ---
     angle_start = random.uniform(0, 2*math.pi)
-    ball = Ball(CENTER_X + 1, CENTER_Y, BALL_RADIUS, RED,
+    ball = Ball(CENTER_X, CENTER_Y, BALL_RADIUS, RED, # Start at center
                 INITIAL_BALL_SPEED * math.cos(angle_start),
                 INITIAL_BALL_SPEED * math.sin(angle_start))
 
     circles = []
     for i in range(NUM_CIRCLES):
         radius = INITIAL_RADIUS + i * RADIUS_STEP
-        # Donner une vitesse de rotation différente à chaque cercle pour l'esthétique
-        # Par exemple, alterner le sens et varier légèrement la vitesse
         direction = 1 if i % 2 == 0 else -1
-        # Vitesse légèrement différente, ex: plus rapide pour les petits cercles
-        speed_modifier = 1 + (NUM_CIRCLES - 1 - i) * 0.2 # Plus rapide à l'intérieur
+        speed_modifier = 1 + (NUM_CIRCLES - 1 - i) * 0.1 # Légère variation
         rotation_speed = direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
-
         circle = CircleWall(CENTER_X, CENTER_Y, radius, BLUE, CIRCLE_THICKNESS,
-                            INITIAL_GAP_CENTER_ANGLE_RAD, # Chaque cercle commence avec le même alignement
-                            GAP_ANGLE_RAD,
-                            rotation_speed) # Passer la vitesse de rotation
+                            INITIAL_GAP_CENTER_ANGLE_RAD + i * math.pi / 8, # Décaler légèrement les gaps initiaux
+                            GAP_ANGLE_RAD, rotation_speed)
         circles.append(circle)
 
-    # --- Boucle de jeu ---
     running = True
     while running:
         dt = clock.tick(FPS) / 1000.0
+        if dt > 0.1: dt = 0.1 # Limiter le dt max pour éviter les sauts physiques
 
-        # --- Gestion des événements ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+            if event.type == pygame.QUIT: running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
+                if event.key == pygame.K_ESCAPE: running = False
 
-        # --- Mises à jour ---
         ball.update(dt)
-        # Mettre à jour la rotation de tous les cercles actifs
         for circle in circles:
-            circle.update(dt) # Appel de la nouvelle méthode update
+            circle.update(dt)
 
-        # --- Détection des collisions et logique ---
         if circles:
             current_circle = circles[0]
 
@@ -201,66 +170,65 @@ def main():
             dist_sq = dx*dx + dy*dy
             dist = math.sqrt(dist_sq)
 
-            collision_threshold = current_circle.radius
-            # Pour le rebond, on veut la surface intérieure du mur épais
-            # Mais pour détecter si on DOIT rebondir, le rayon extérieur suffit.
-            # Pour passer, on vérifie si le *centre* de la balle a dépassé le rayon
-            # Modifions légèrement la logique pour être plus précis:
-            # Collision si la distance bord_balle < rayon_mur_interne
-            # Passage si dist > rayon_mur_externe et angle dans le gap
+            # --- Logique de Collision/Passage Révisée ---
+            # Point de contact = quand la distance du centre de la balle est rayon_cercle - rayon_balle
+            collision_dist = current_circle.radius - ball.radius
 
-            # Test de collision potentiel (la balle touche la zone du cercle)
-            # On regarde si le bord extérieur de la balle touche ou dépasse le rayon intérieur du mur
-            # Ou si le centre de la balle est proche du rayon
-            if dist + ball.radius >= collision_threshold - current_circle.thickness / 2: # Proche ou à l'intérieur du mur
+            # On vérifie si la balle a dépassé ce point de contact (vers l'extérieur)
+            if dist >= collision_dist:
+                # Calculer la normale (pointe du centre vers la balle)
+                # Gérer le cas où dist est quasi nulle (balle au centre exact), rare mais possible
+                if dist < 1e-6:
+                    # Pas de direction définie, on ne fait rien ou on choisit une direction arbitraire
+                    # Le plus simple est d'attendre qu'elle bouge un peu
+                     pass # Éviter division par zéro
+                else:
+                    nx = dx / dist
+                    ny = dy / dist
 
-                 # Vérifier si la balle est "alignée" avec l'ouverture au moment où elle atteint le rayon
-                 if current_circle.is_ball_in_gap(ball):
-                     # Pour considérer un passage, la balle doit effectivement avoir dépassé le rayon
-                     # Vérifions si le *centre* de la balle est sorti (dist > radius)
-                     # Ou si la balle est suffisamment engagée dans l'ouverture
-                     # Une condition simple : si elle touche et est dans l'angle, et va vers l'extérieur
-                     vel_x, vel_y = ball.get_velocity()
-                     # Produit scalaire de la position relative et de la vitesse
-                     # Si positif, la balle s'éloigne du centre
-                     dot_product_pos_vel = dx * vel_x + dy * vel_y
-                     
-                     # On passe si on est dans l'angle du gap ET on s'éloigne du centre
-                     # ET que le centre de la balle a au moins atteint le rayon
-                     if dot_product_pos_vel > 0 and dist >= collision_threshold - ball.radius: # Ajustement pour le passage
-                         print(f"Balle passée à travers le cercle de rayon {current_circle.radius:.0f} (Gap: {current_circle.gap_center_rad:.2f})")
-                         circles.pop(0)
-                         current_circle = None # Le cercle courant n'existe plus pour cette frame
-                     # Sinon (même si dans l'angle, mais on va vers l'intérieur ou on n'a pas dépassé), on rebondit quand même sur le "bord" du gap? Non, laissons passer.
-                     # Si on est dans l'angle mais on arrive de l'extérieur vers l'intérieur? Ça ne devrait pas arriver si on commence dedans.
+                    # Calculer l'angle de la balle (convention mathématique)
+                    ball_angle_math = math.atan2(-dy, dx) # Y inversé pour Pygame -> Math
 
-                 # Si collision ET pas dans le gap => Rebond
-                 elif current_circle and dist + ball.radius >= collision_threshold: # Assurons nous qu'on touche bien
-                     # Normal vector (centre vers balle)
-                     nx = dx / dist
-                     ny = dy / dist
+                    # Vérifier si cet angle est dans l'ouverture
+                    in_gap = current_circle.is_angle_in_gap(ball_angle_math)
 
-                     # Reflect velocity
-                     ball.reflect_velocity(nx, ny)
+                    # Calculer la composante radiale de la vitesse (vitesse le long de la normale)
+                    radial_speed = ball.vx * nx + ball.vy * ny
 
-                     # Position correction (replacer la balle exactement sur le cercle)
-                     # Pousser la balle pour que son bord soit sur le rayon
-                     target_dist = collision_threshold - ball.radius
-                     correction_dist = target_dist - dist
-                     ball.x += correction_dist * nx
-                     ball.y += correction_dist * ny
-                     #print(f"Rebond sur cercle {current_circle.radius:.0f}") # Debug
-
-            # Alternative pour le passage: si la balle sort complètement du rayon ET est dans l'angle?
-            # if dist - ball.radius > current_circle.radius: # La balle est complètement sortie
-            #      if current_circle.is_ball_in_gap(ball):
-            #           print(f"Balle passée (méthode 2)...")
-            #           circles.pop(0)
-            #           current_circle = None
+                    # --- Décision: Passer ou Rebondir ---
+                    if in_gap:
+                        # Si dans l'ouverture ET la balle s'éloigne du centre (ou est déjà dehors)
+                        if radial_speed >= 0: # S'éloigne ou vitesse radiale nulle mais dehors
+                            print(f"Balle passée par le gap du cercle {current_circle.radius:.0f}")
+                            circles.pop(0)
+                            # Important: Ne pas traiter d'autre collision/rebond pour cette balle cette frame
+                            current_circle = None # Marquer que le cercle a été traité/supprimé
+                        else:
+                             # Dans le gap mais va vers l'intérieur? Théoriquement impossible si elle vient de l'intérieur.
+                             # Si ça arrive (ex: dt trop grand), on pourrait la laisser passer ou la faire rebondir sur le "bord" du gap (complexe).
+                             # Pour l'instant, traitons comme un rebond normal si elle n'est pas en train de sortir.
+                             # print(f"Info: Dans le gap mais vitesse radiale négative ({radial_speed:.2f}). Rebond.")
+                             ball.reflect_velocity(nx, ny)
+                             # Correction de position
+                             overlap = dist - collision_dist
+                             ball.x -= overlap * nx
+                             ball.y -= overlap * ny
 
 
-        if not circles:
-            pass
+                    else: # Pas dans l'ouverture -> Rebondir
+                        # Rebondir seulement si la vitesse est sortante (radial_speed > 0)
+                        # S'assurer qu'elle heurte bien le mur
+                        if radial_speed > 0: # Va vers l'extérieur
+                             #print(f"Rebond sur mur du cercle {current_circle.radius:.0f}") # Debug
+                             ball.reflect_velocity(nx, ny)
+
+                             # Correction de position : ramener exactement au point de contact
+                             overlap = dist - collision_dist # Combien la balle a dépassé le point de contact
+                             ball.x -= overlap * nx # Reculer le long de la normale
+                             ball.y -= overlap * ny
+                        # else: La balle est "derrière" le point de contact mais va vers l'intérieur,
+                        #      elle n'a pas encore "heurté" le mur de ce côté. Laisser continuer.
+
 
         # --- Dessin ---
         screen.fill(BLACK)
