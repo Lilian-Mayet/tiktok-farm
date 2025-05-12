@@ -2,6 +2,8 @@ import pygame
 import math
 import sys
 import random
+import pygame.midi 
+import mido  # <-- ADD THIS
 
 # --- Constantes ---
 SCREEN_WIDTH = 450
@@ -14,6 +16,13 @@ BLUE = (50, 150, 255)     # Player 2 color
 CIRCLE_COLOR = (255, 255, 255) # Circle wall color
 OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
+
+
+# --- MIDI Constants ---
+MIDI_DEVICE_ID = None # Keep device selection as before
+MIDI_INSTRUMENT = 0   # Still useful to set initially
+MIDI_FILENAME = "midiFiles/MarioBros.mid" # <-- ADD THIS - Change if your file has a different name
+MIDI_VELOCITY_FALLBACK = 100 # Velocity to use if MIDI file velocity is weird (optional)
 
 BALL_RADIUS = 9
 BALL_OUTLINE_WIDTH = 1
@@ -42,11 +51,12 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dual Ball Circle Break")
 clock = pygame.time.Clock()
 score_font = pygame.font.Font(None, 36) # Font for scores
-# Pour des particules avec alpha variable (plus joli mais plus lent):
 
 def normalize_angle(angle_rad):
-    while angle_rad < 0: angle_rad += 2 * math.pi
-    while angle_rad >= 2 * math.pi: angle_rad -= 2 * math.pi
+    while angle_rad < 0: 
+        angle_rad += 2 * math.pi
+    while angle_rad >= 2 * math.pi:
+        angle_rad -= 2 * math.pi
     return angle_rad
 
 def is_angle_in_gap(angle_rad, gap_center_rad, gap_width_rad):
@@ -65,6 +75,37 @@ def calculate_rotation_speed(index, total_initial_circles):
     speed_modifier = 1.0 + (total_initial_circles - 1 - index) * 0.15 # Ajuster le facteur 0.15 si besoin
     speed_modifier = max(0.2, speed_modifier) # Vitesse minimale
     return direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
+
+# --- MIDI File Loading Function ---
+def load_midi_notes(filename):
+    """Loads Note On events from a MIDI file into a list."""
+    note_sequence = []
+    try:
+        mid = mido.MidiFile(filename)
+        print(f"Loading MIDI file: {filename}")
+        time_since_last = 0
+        for i, track in enumerate(mid.tracks):
+            print(f"--- Track {i}: {track.name}")
+            # Reset time for each track if needed, but absolute time might be better if combining
+            # For sequential notes regardless of timing, just iterate messages
+            for msg in track:
+                # We only care about note_on events with positive velocity
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    note_sequence.append({
+                        'note': msg.note,
+                        'velocity': msg.velocity,
+                        # 'time': msg.time # Original delta time, we ignore this for sequential playback
+                    })
+        print(f"Loaded {len(note_sequence)} note events.")
+
+        return note_sequence
+    except FileNotFoundError:
+        print(f"Error: MIDI file not found at '{filename}'")
+        return []
+    except Exception as e:
+        print(f"Error loading MIDI file '{filename}': {e}")
+        return []
+
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
     def __init__(self, x, y, color):
@@ -208,8 +249,23 @@ class CircleWall:
         y = self.center_y - self.radius * math.sin(angle_rad) # Pygame Y inversion
         return x, y
 
+
+
+
+# --- MIDI Setup (pygame.midi part remains mostly the same) ---
+pygame.midi.init()
+# ... (Code to list devices, select MIDI_DEVICE_ID, open midi_output) ...
+# ... (Make sure midi_output is None if opening fails) ...
+midi_output = None
+if midi_output:
+     midi_output.set_instrument(MIDI_INSTRUMENT, channel=0)
+
 # --- Logique Principale (Modifiée pour 2 balles, score, effets) ---
 def main():
+    # --- Load MIDI Notes Sequence ---
+    loaded_notes = load_midi_notes(MIDI_FILENAME)
+    current_note_index = 0 # Index for the next note to play from the loaded sequence
+
     # --- Création des objets ---
     balls = []
     # Balle 1 (Rouge)
@@ -294,6 +350,34 @@ def main():
                         if in_gap:
                             if radial_speed >= 0: # Sort par le gap
                                 if not circle_broken_this_frame: # Le cercle n'a pas déjà été cassé CETTE FRAME
+
+
+                                    # --- !!! MIDI NOTE PLAYBACK (FROM FILE SEQUENCE) !!! ---
+                                    if midi_output and current_note_index < len(loaded_notes):
+                                        try:
+                                            # Get the next note event from the loaded list
+                                            note_event = loaded_notes[current_note_index]
+                                            note_to_play = note_event['note']
+                                            # Use velocity from the file, or fallback
+                                            velocity_to_play = note_event.get('velocity', MIDI_VELOCITY_FALLBACK)
+                                            # Ensure velocity is valid
+                                            velocity_to_play = max(1, min(127, velocity_to_play))
+
+                                            print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, Vel={velocity_to_play}")
+                                            midi_output.note_on(note_to_play, velocity_to_play, channel=0)
+                                            midi_output.note_off(note_to_play, 0, channel=0) # Immediate note off
+
+                                            # Move to the next note in the sequence for the next break
+                                            current_note_index += 1
+
+                                        except Exception as e:
+                                             print(f"Error playing MIDI note: {e}")
+                                    elif midi_output and current_note_index >= len(loaded_notes):
+                                         print("End of MIDI file notes reached.")
+                                    # --- !!! END MIDI NOTE PLAYBACK !!! ---    
+
+
+
                                     print(f"{ball.name} passed through circle {current_circle.radius:.0f}")
                                     ball.add_score(1)
 
