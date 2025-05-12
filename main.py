@@ -28,7 +28,7 @@ MIDI_PLAYBACK_VELOCITY = 160
 BALL_RADIUS = 9
 BALL_OUTLINE_WIDTH = 1
 INITIAL_BALL_SPEED = 180
-NUM_CIRCLES = 150
+NUM_CIRCLES = 430
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
 RADIUS_STEP = 35
@@ -41,6 +41,7 @@ ROTATION_SLOWDOWN_FACTOR = 0.92
 CIRCLE_SHRINK_SPEED = 45.0 # Shrink speed
 FPS = 60
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
+
 
 # Particle Effect Constantes
 NUM_PARTICLES_ON_BREAK = 120
@@ -164,12 +165,60 @@ class Ball:
         self.name = name
         self.vx = float(initial_vx)
         self.vy = float(initial_vy)
+        initial_speed_sq = self.vx**2 + self.vy**2
+        initial_ke = 0.5 * initial_speed_sq
+        # Énergie Potentielle Initiale (PE = m * g * h, on prend m=1, h = -y par rapport au haut de l'écran)
+        # Utiliser g = GRAVITY_ACCELERATION. PE est négative car Y augmente vers le bas.
+        initial_pe = -GRAVITY_ACCELERATION * self.y
+        # Énergie Totale (constante que l'on veut maintenir)
+        self.total_energy = initial_ke + initial_pe
         self.score = 0
 
     def update(self, dt):
-        self.vy += GRAVITY_ACCELERATION * dt
-        self.x += self.vx * dt
-        self.y += self.vy * dt
+            # --- MODIFICATION : Méthode update complète avec conservation d'énergie ---
+
+            # 1. Appliquer l'accélération gravitationnelle (style Euler simple)
+            self.vy += GRAVITY_ACCELERATION * dt
+
+            # 2. Mettre à jour la position basée sur la vitesse actuelle (potentiellement incorrecte énergétiquement)
+            self.x += self.vx * dt
+            self.y += self.vy * dt
+
+            # 3. Calculer l'énergie potentielle ACTUELLE basée sur la NOUVELLE position y
+            current_pe = -GRAVITY_ACCELERATION * self.y
+
+            # 4. Calculer l'énergie cinétique REQUISE pour conserver l'énergie totale
+            required_ke = self.total_energy - current_pe
+
+            # S'assurer que l'énergie cinétique requise n'est pas négative (ça peut arriver par erreur numérique)
+            if required_ke < 0:
+                required_ke = 0 # La balle ne peut pas aller plus haut que son énergie totale le permet
+
+            # 5. Calculer la vitesse (magnitude) requise à partir de KE = 0.5 * speed^2
+            # required_speed^2 = 2 * required_ke
+            required_speed_sq = 2 * required_ke
+            required_speed = math.sqrt(required_speed_sq)
+
+            # 6. Obtenir la vitesse actuelle (après l'étape 1 & 2)
+            current_speed_sq = self.vx**2 + self.vy**2
+
+            # 7. Mettre à l'échelle le vecteur vitesse actuel pour correspondre à la vitesse requise
+            if current_speed_sq > 1e-9: # Éviter la division par zéro si la vitesse est nulle
+                current_speed = math.sqrt(current_speed_sq)
+                # Calculer le facteur de mise à l'échelle
+                scale_factor = required_speed / current_speed
+                # Appliquer l'échelle au vecteur vitesse
+                self.vx *= scale_factor
+                self.vy *= scale_factor
+            elif required_speed > 1e-6:
+                # Cas étrange: la vitesse actuelle est nulle, mais elle devrait être > 0.
+                # On n'a pas de direction ! On ne peut pas faire grand-chose.
+                # Peut-être lui donner une petite vitesse verticale basée sur required_speed ?
+                # Pour la simplicité, on la laisse à zéro pour l'instant.
+                self.vx = 0.0
+                # self.vy = -required_speed # Lui donner une vitesse vers le haut ? Ou 0 ?
+                self.vy = 0.0 # Plus sûr pour l'instant
+                # print(f"Warning: Ball {self.name} speed became zero but required speed is {required_speed}")
 
     def draw(self, surface):
         pos = (int(self.x), int(self.y))
@@ -179,46 +228,20 @@ class Ball:
         pygame.draw.circle(surface, self.color, pos, self.radius)
 
     def reflect_velocity(self, nx, ny):
-        """ Réfléchit la vitesse et assure la conservation de l'énergie cinétique (vitesse). """
-        # Calculer le produit scalaire (vitesse projetée sur la normale)
-        dot_product = self.vx * nx + self.vy * ny
+            # --- MODIFICATION : Simplifier maintenant que update() gère l'énergie ---
+            """ Réfléchit la vélocité par rapport à la normale (nx, ny).
+                L'énergie est conservée par la méthode update(). """
 
-        # Ne réfléchir que si la balle va VERS le mur (produit scalaire > 0 car la normale pointe vers l'extérieur)
-        if dot_product > 0:
-            # --- AJOUT : Sauvegarder la vitesse avant réflexion ---
-            speed_before_reflection = math.sqrt(self.vx**2 + self.vy**2)
-            # --- FIN AJOUT ---
+            dot_product = self.vx * nx + self.vy * ny
 
-            # Calculer la vitesse réfléchie idéale (formule standard)
-            reflect_vx = self.vx - 2 * dot_product * nx
-            reflect_vy = self.vy - 2 * dot_product * ny
-
-            # --- AJOUT : Ré-normaliser à la vitesse d'origine ---
-            # Calculer la vitesse résultante de la formule de réflexion
-            speed_after_reflection_calc = math.sqrt(reflect_vx**2 + reflect_vy**2)
-
-            # Éviter la division par zéro si la vitesse devient nulle (peu probable ici)
-            if speed_after_reflection_calc < speed_before_reflection: # Utiliser une petite tolérance
-                # Calculer le facteur d'échelle pour retrouver la vitesse d'origine
-                scale_factor = speed_before_reflection / speed_after_reflection_calc
-                # Appliquer l'échelle
-   
-                final_vx = reflect_vx * (scale_factor)
-                final_vy = reflect_vy * (scale_factor)
-            else:
-                # Si la vitesse calculée est quasi nulle, utiliser la vitesse réfléchie brute
-                # ou mettre à zéro si speed_before_reflection était aussi nulle
-                if speed_before_reflection < 1e-6:
-                    final_vx, final_vy = 0.0, 0.0
-                else:
-                    # Ce cas est étrange, mais on garde la direction réfléchie si possible
-                    final_vx, final_vy = reflect_vx, reflect_vy
-
-            # Assigner la vitesse finale corrigée
-            self.vx = final_vx
-            self.vy = final_vy
-            # --- FIN AJOUT ---
-
+            if dot_product > 0: # Va vers l'extérieur/mur
+                # Formule de réflexion standard, SANS re-scaling ici.
+                # La méthode update() s'assurera que la magnitude finale est correcte.
+                reflect_vx = self.vx - 2 * dot_product * nx
+                reflect_vy = self.vy - 2 * dot_product * ny
+                self.vx = reflect_vx
+                self.vy = reflect_vy
+    
     def get_pos(self):
         return self.x, self.y
 
@@ -313,7 +336,7 @@ if midi_output:
 def main():
     # --- Load MIDI Notes Sequence ---
     loaded_notes = load_midi_notes(MIDI_FILENAME)
-    current_note_index = 3 # Index for the next note to play from the loaded sequence
+    current_note_index = 1 # Index for the next note to play from the loaded sequence
 
     # --- Création des objets ---
     balls = []
@@ -417,7 +440,7 @@ def main():
 
                                             # Clamp just in case, to ensure it's valid (1-127)
                                             velocity_to_play = max(1, min(127, velocity_to_play))
-
+                        
                                             # Updated print statement to reflect fixed velocity is used
                                             print(f"Playing Note {current_note_index+1}/{len(loaded_notes)} from MIDI file: Note={note_to_play}, FIXED Vel={velocity_to_play}")
                                             
