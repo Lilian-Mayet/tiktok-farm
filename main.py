@@ -12,17 +12,18 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (100, 100, 255)
 BALL_RADIUS = 8
-INITIAL_BALL_SPEED = 250
+INITIAL_BALL_SPEED = 75
 NUM_CIRCLES = 16
-INITIAL_RADIUS = 40
+INITIAL_RADIUS = 90
 RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 3) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0
-CIRCLE_THICKNESS = 3
+CIRCLE_THICKNESS = 5
 GAP_PERCENTAGE = 0.15
 GAP_ANGLE_RAD = 2 * math.pi * GAP_PERCENTAGE
 INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
 BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 4
 FPS = 60
 GRAVITY_ACCELERATION = 400.0 # Pixels par seconde^2 (Ajustez cette valeur !)
+CIRCLE_SHRINK_SPEED = 30.0 # Vitesse de rétrécissement en pixels par seconde (Ajustez !)
 
 # --- Initialisation Pygame (Identique) ---
 pygame.init()
@@ -93,45 +94,78 @@ class CircleWall:
                  initial_gap_center_rad, gap_width_rad, rotation_speed):
         self.center_x = center_x
         self.center_y = center_y
-        self.radius = radius
+        # Le rayon actuel et le rayon cible commencent identiques
+        self.radius = float(radius)
+        self.target_radius = float(radius) # Le rayon vers lequel on veut animer
         self.color = color
         self.thickness = thickness
         self.gap_width_rad = gap_width_rad
         self.rotation_speed = rotation_speed
         self.gap_center_rad = normalize_angle(initial_gap_center_rad)
+        self.shrink_speed = CIRCLE_SHRINK_SPEED # Vitesse d'animation du rayon
+
         self.arc_start_angle_pygame = 0
         self.arc_end_angle_pygame = 0
         self._recalculate_draw_angles()
 
     def _recalculate_draw_angles(self):
+        # ... (cette méthode reste identique) ...
         gap_start_rad = normalize_angle(self.gap_center_rad - self.gap_width_rad / 2)
         gap_end_rad = normalize_angle(self.gap_center_rad + self.gap_width_rad / 2)
         self.arc_start_angle_pygame = gap_end_rad
         self.arc_end_angle_pygame = gap_start_rad
 
     def update(self, dt):
+        """ Met à jour l'angle ET anime le rayon vers la cible """
+        # Mise à jour de la rotation du gap
         self.gap_center_rad += self.rotation_speed * dt
         self.gap_center_rad = normalize_angle(self.gap_center_rad)
         self._recalculate_draw_angles()
 
-    def draw(self, surface):
-        rect = pygame.Rect(self.center_x - self.radius, self.center_y - self.radius,
-                           2 * self.radius, 2 * self.radius)
-        # Éviter l'erreur si start == end après normalisation et flottants
-        if abs(self.arc_start_angle_pygame - self.arc_end_angle_pygame) < 0.001:
-             pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), self.radius, self.thickness)
-        else:
-             pygame.draw.arc(surface, self.color, rect,
-                             self.arc_start_angle_pygame,
-                             self.arc_end_angle_pygame,
-                             self.thickness)
+        # Animation du rayon vers la cible
+        if abs(self.radius - self.target_radius) > 0.1: # Si pas déjà à la cible (avec une petite tolérance)
+            change = self.shrink_speed * dt
+            if self.radius > self.target_radius:
+                self.radius -= change
+                # Empêcher de dépasser la cible en rétrécissant
+                if self.radius < self.target_radius:
+                    self.radius = self.target_radius
+            # elif self.radius < self.target_radius: # Gérer aussi l'agrandissement si nécessaire
+            #     self.radius += change
+            #     if self.radius > self.target_radius:
+            #         self.radius = self.target_radius
 
-    # Prend directement l'angle calculé pour éviter recalcul
+    def draw(self, surface):
+        """ Dessine l'arc de cercle avec le rayon actuel """
+        # Utilise self.radius qui est animé dans update()
+        current_radius_int = int(self.radius)
+        if current_radius_int <= 0: return # Ne rien dessiner si le rayon est nul ou négatif
+
+        rect = pygame.Rect(self.center_x - current_radius_int, self.center_y - current_radius_int,
+                           2 * current_radius_int, 2 * current_radius_int)
+
+        # Gérer le cas où le dessin d'arc échoue si start ~ end
+        # Ou si le rayon est trop petit pour l'épaisseur
+        if abs(self.arc_start_angle_pygame - self.arc_end_angle_pygame) < 0.01 or current_radius_int < self.thickness:
+             # Dessiner un cercle complet si l'arc est invalide ou trop petit
+              pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), current_radius_int, self.thickness)
+        else:
+             try:
+                pygame.draw.arc(surface, self.color, rect,
+                                self.arc_start_angle_pygame,
+                                self.arc_end_angle_pygame,
+                                self.thickness)
+             except ValueError: # Peut arriver si le rect dégénère (rayon trop petit)
+                 pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), current_radius_int, self.thickness)
+
+
+    # is_angle_in_gap reste identique
     def is_angle_in_gap(self, ball_angle_math):
-        """ Vérifie si l'angle donné correspond à l'ouverture ACTUELLE du cercle """
-        # Utilise la fonction globale avec les paramètres actuels du cercle
         return is_angle_in_gap(ball_angle_math, self.gap_center_rad, self.gap_width_rad)
 
+    # Nouvelle méthode pour définir la cible du rayon
+    def set_target_radius(self, new_target_radius):
+        self.target_radius = float(new_target_radius)
 
 # --- Logique Principale (CORRIGÉE) ---
 def main():
@@ -146,15 +180,16 @@ def main():
         direction = 1 if i % 2 == 0 else -1
         speed_modifier = 1 + (NUM_CIRCLES - 1 - i) * 0.1 # Légère variation
         rotation_speed = direction * BASE_ROTATION_SPEED_RAD_PER_SEC * speed_modifier
-        circle = CircleWall(CENTER_X, CENTER_Y, radius, BLUE, CIRCLE_THICKNESS,
+        circle = CircleWall(CENTER_X, CENTER_Y, radius, WHITE, CIRCLE_THICKNESS,
                             INITIAL_GAP_CENTER_ANGLE_RAD + i * math.pi / 8, # Décaler légèrement les gaps initiaux
                             GAP_ANGLE_RAD, rotation_speed)
         circles.append(circle)
 
     running = True
     while running:
+        # ... (Gestion temps, événements, update balle, update cercles [qui inclut anim rayon]) ...
         dt = clock.tick(FPS) / 1000.0
-        if dt > 0.1: dt = 0.1 # Limiter le dt max pour éviter les sauts physiques
+        if dt > 0.1: dt = 0.1
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
@@ -163,80 +198,64 @@ def main():
 
         ball.update(dt)
         for circle in circles:
-            circle.update(dt)
+            circle.update(dt) # Appelle la méthode update modifiée
 
         if circles:
             current_circle = circles[0]
+
+            # --- Logique Collision/Passage ---
+            # Utilise current_circle.radius (qui est en cours d'animation)
+            collision_dist = current_circle.radius - ball.radius
 
             dx = ball.x - current_circle.center_x
             dy = ball.y - current_circle.center_y
             dist_sq = dx*dx + dy*dy
             dist = math.sqrt(dist_sq)
 
-            # --- Logique de Collision/Passage Révisée ---
-            # Point de contact = quand la distance du centre de la balle est rayon_cercle - rayon_balle
-            collision_dist = current_circle.radius - ball.radius
-
-            # On vérifie si la balle a dépassé ce point de contact (vers l'extérieur)
             if dist >= collision_dist:
-                # Calculer la normale (pointe du centre vers la balle)
-                # Gérer le cas où dist est quasi nulle (balle au centre exact), rare mais possible
-                if dist < 1e-6:
-                    # Pas de direction définie, on ne fait rien ou on choisit une direction arbitraire
-                    # Le plus simple est d'attendre qu'elle bouge un peu
-                     pass # Éviter division par zéro
-                else:
+                if dist > 1e-6:
                     nx = dx / dist
                     ny = dy / dist
-
-                    # Calculer l'angle de la balle (convention mathématique)
-                    ball_angle_math = math.atan2(-dy, dx) # Y inversé pour Pygame -> Math
-
-                    # Vérifier si cet angle est dans l'ouverture
+                    ball_angle_math = math.atan2(-dy, dx)
                     in_gap = current_circle.is_angle_in_gap(ball_angle_math)
-
-                    # Calculer la composante radiale de la vitesse (vitesse le long de la normale)
                     radial_speed = ball.vx * nx + ball.vy * ny
 
-                    # --- Décision: Passer ou Rebondir ---
                     if in_gap:
-                        # Si dans l'ouverture ET la balle s'éloigne du centre (ou est déjà dehors)
-                        if radial_speed >= 0: # S'éloigne ou vitesse radiale nulle mais dehors
+                        if radial_speed >= 0:
                             print(f"Balle passée par le gap du cercle {current_circle.radius:.0f}")
                             circles.pop(0)
-                            # Important: Ne pas traiter d'autre collision/rebond pour cette balle cette frame
-                            current_circle = None # Marquer que le cercle a été traité/supprimé
-                        else:
-                             # Dans le gap mais va vers l'intérieur? Théoriquement impossible si elle vient de l'intérieur.
-                             # Si ça arrive (ex: dt trop grand), on pourrait la laisser passer ou la faire rebondir sur le "bord" du gap (complexe).
-                             # Pour l'instant, traitons comme un rebond normal si elle n'est pas en train de sortir.
-                             # print(f"Info: Dans le gap mais vitesse radiale négative ({radial_speed:.2f}). Rebond.")
-                             ball.reflect_velocity(nx, ny)
-                             # Correction de position
-                             overlap = dist - collision_dist
-                             ball.x -= overlap * nx
-                             ball.y -= overlap * ny
+                            current_circle = None
+
+                            # --- !!! MODIFICATION ICI : Définir le NOUVEAU target_radius !!! ---
+                            if circles:
+                                for i, circle_to_update in enumerate(circles):
+                                    # Calculer le rayon cible pour la nouvelle position i
+                                    target_radius = INITIAL_RADIUS + i * RADIUS_STEP
+                                    # Définir la cible pour l'animation
+                                    circle_to_update.set_target_radius(target_radius)
+                                    # La méthode update de circle_to_update s'occupera de l'animation
+
+                        else: # Dans le gap mais va vers l'intérieur
+                            # ... (rebond) ...
+                            if radial_speed > 0: # Correction: il faut aller vers l'extérieur pour rebondir
+                                 ball.reflect_velocity(nx, ny)
+                                 overlap = dist - collision_dist
+                                 ball.x -= overlap * nx
+                                 ball.y -= overlap * ny
 
 
                     else: # Pas dans l'ouverture -> Rebondir
-                        # Rebondir seulement si la vitesse est sortante (radial_speed > 0)
-                        # S'assurer qu'elle heurte bien le mur
-                        if radial_speed > 0: # Va vers l'extérieur
-                             #print(f"Rebond sur mur du cercle {current_circle.radius:.0f}") # Debug
-                             ball.reflect_velocity(nx, ny)
-
-                             # Correction de position : ramener exactement au point de contact
-                             overlap = dist - collision_dist # Combien la balle a dépassé le point de contact
-                             ball.x -= overlap * nx # Reculer le long de la normale
-                             ball.y -= overlap * ny
-                        # else: La balle est "derrière" le point de contact mais va vers l'intérieur,
-                        #      elle n'a pas encore "heurté" le mur de ce côté. Laisser continuer.
-
+                        if radial_speed > 0:
+                            # ... (rebond) ...
+                            ball.reflect_velocity(nx, ny)
+                            overlap = dist - collision_dist
+                            ball.x -= overlap * nx
+                            ball.y -= overlap * ny
 
         # --- Dessin ---
         screen.fill(BLACK)
         for circle in circles:
-            circle.draw(screen)
+            circle.draw(screen) # Utilise la méthode draw modifiée
         ball.draw(screen)
         pygame.display.flip()
 
