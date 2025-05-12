@@ -13,7 +13,7 @@ RED = (255, 50, 50)       # Player 1 color
 BLUE = (50, 150, 255)     # Player 2 color
 CIRCLE_COLOR = (200, 200, 200) # Circle wall color
 OUTLINE_COLOR = (50, 50, 50)   # Ball outline color
-PARTICLE_COLOR = (255, 255, 0) # Color for disappearance effect
+PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
 
 BALL_RADIUS = 9
 BALL_OUTLINE_WIDTH = 2
@@ -31,8 +31,8 @@ FPS = 60
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
 
 # Particle Effect Constantes
-NUM_PARTICLES_ON_BREAK = 25
-PARTICLE_LIFETIME = 0.6 # seconds
+NUM_PARTICLES_ON_BREAK = 50
+PARTICLE_LIFETIME = 3 # seconds
 PARTICLE_MAX_SPEED = 100
 
 # --- Initialisation Pygame ---
@@ -42,9 +42,7 @@ pygame.display.set_caption("Dual Ball Circle Break")
 clock = pygame.time.Clock()
 score_font = pygame.font.Font(None, 36) # Font for scores
 # Pour des particules avec alpha variable (plus joli mais plus lent):
-# screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
 
-# --- Fonctions Utilitaires (Inchangées) ---
 def normalize_angle(angle_rad):
     while angle_rad < 0: angle_rad += 2 * math.pi
     while angle_rad >= 2 * math.pi: angle_rad -= 2 * math.pi
@@ -62,13 +60,14 @@ class Particle:
     def __init__(self, x, y, color):
         self.x = float(x)
         self.y = float(y)
-        self.color = color
+        self.color = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
+        #self.color = color
         angle = random.uniform(0, 2 * math.pi)
-        speed = random.uniform(PARTICLE_MAX_SPEED * 0.1, PARTICLE_MAX_SPEED)
+        speed = random.uniform(PARTICLE_MAX_SPEED * 0.5, PARTICLE_MAX_SPEED)
         self.vx = speed * math.cos(angle)
         self.vy = speed * math.sin(angle)
         self.lifetime = PARTICLE_LIFETIME
-        self.size = random.randint(2, 4)
+        self.size = random.randint(1, 5)
 
     def update(self, dt):
         self.x += self.vx * dt
@@ -88,7 +87,6 @@ class Particle:
              # pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.size // 2)
 
 
-# --- Classe Ball (Modifiée pour nom, score, outline) ---
 class Ball:
     def __init__(self, x, y, radius, color, outline_color, outline_width, name, initial_vx, initial_vy):
         self.x = float(x)
