@@ -4,11 +4,12 @@ import sys
 import random
 import pygame.midi 
 import mido  # <-- ADD THIS
+import math
 
 
 # --- Constantes ---
 SCREEN_HEIGHT = 800
-SCREEN_WIDTH = SCREEN_HEIGHT* (9/16)
+SCREEN_WIDTH = int(SCREEN_HEIGHT* (9/16))
 
 # NOUVEAU CENTRE DE JEU (plus bas)
 GAME_CENTER_Y_OFFSET = 0 # Combien descendre le centre du jeu
@@ -93,7 +94,7 @@ MIDI_PLAYBACK_VELOCITY = 255
 BALL_RADIUS = 20
 BALL_OUTLINE_WIDTH = 2
 INITIAL_BALL_SPEED = 160
-NUM_CIRCLES = 40
+NUM_CIRCLES = 32
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
 RADIUS_STEP = 35
@@ -207,6 +208,106 @@ def draw_rounded_rect(surface, rect, color, corner_radius):
     pygame.draw.circle(surface, color, (rect.left + corner_radius, rect.bottom - corner_radius -1), corner_radius)
     pygame.draw.circle(surface, color, (rect.right - corner_radius -1, rect.bottom - corner_radius -1), corner_radius)
 
+
+def normalize_angle_for_sweep(angle_rad):
+    """ Normalizes an angle to [0, 2*pi) for sweep calculations. """
+    while angle_rad < 0:
+        angle_rad += 2 * math.pi
+    while angle_rad >= 2 * math.pi:
+        angle_rad -= 2 * math.pi
+    return angle_rad
+
+def draw_thick_arc(surface, color, center, inner_radius, outer_radius,
+                   arc_segment_start_rad_ccw, arc_segment_stop_rad_ccw,
+                   segments_per_radian=10):
+    """
+    Draws a 'filled' thick arc manually using polygons.
+    Angles are expected in standard mathematical convention (radians, 0 is East/right, positive is Counter-Clockwise).
+    The arc is drawn Counter-Clockwise from arc_segment_start_rad_ccw to arc_segment_stop_rad_ccw.
+
+    - surface: Pygame surface to draw on.
+    - color: Color of the arc.
+    - center: (x, y) tuple for the arc's center.
+    - inner_radius: Radius of the inner edge of the arc.
+    - outer_radius: Radius of the outer edge of the arc.
+    - arc_segment_start_rad_ccw: Start angle of the arc segment to draw (math radians, CCW).
+    - arc_segment_stop_rad_ccw: Stop angle of the arc segment to draw (math radians, CCW).
+    - segments_per_radian: How many line segments to use per radian of arc.
+                           Higher values give smoother curves but are more costly.
+    """
+    if outer_radius <= inner_radius or outer_radius <= 0:
+        # print(f"Debug: Invalid radii: inner={inner_radius}, outer={outer_radius}")
+        return
+    if inner_radius < 0: # Treat as 0 if negative
+        inner_radius = 0
+
+    cx, cy = center
+
+    # Normalize angles to ensure they are in a comparable range for sweep calculation
+    start_norm = normalize_angle_for_sweep(arc_segment_start_rad_ccw)
+    stop_norm = normalize_angle_for_sweep(arc_segment_stop_rad_ccw)
+
+    # Calculate the angular sweep (delta) in CCW direction
+    delta_angle = stop_norm - start_norm
+    if delta_angle < 0: # If stop is "before" start after normalization (e.g., start=330deg, stop=30deg)
+        delta_angle += 2 * math.pi # Make it the positive CCW sweep
+
+    if abs(delta_angle) < 0.001: # Arc is essentially a line or point, or full circle if delta_angle was ~2pi
+        if abs(delta_angle - 2 * math.pi) < 0.001: # Full circle (annulus)
+            # Draw outer circle
+            pygame.draw.circle(surface, color, center, int(outer_radius), 0)
+            # Punch out inner circle (if inner_radius > 0 and surface supports transparency for punch-out)
+            # This requires a more complex approach like drawing to a temp surface with colorkey.
+            # For now, if it's a full ring and inner_radius > 0, we draw two circles.
+            # This won't work perfectly if the surface behind isn't a solid color.
+            # A better way for an annulus is two circles if the background is known,
+            # or a filled polygon approach.
+            # Given this function's purpose, a full 2*pi arc should be a ring.
+            if inner_radius > 0:
+                # To draw a ring, draw the larger circle, then a smaller circle of the background color
+                # This is a simplification. A true annulus needs different handling.
+                # For now, let's just draw the outer if it's a full circle for simplicity,
+                # or if the intent is a filled disc (inner_radius == 0).
+                if inner_radius == 0:
+                    pygame.draw.circle(surface, color, center, int(outer_radius), 0)
+                else:
+                    # This is complex; for now, a full ring is approximated
+                    # by many segments by the polygon method below if delta_angle is close to 2*pi.
+                    # Let's make delta_angle slightly less than 2*pi if it's effectively full.
+                    if abs(delta_angle) >= 2 * math.pi - 0.001:
+                        delta_angle = 2 * math.pi - 0.001 # Ensure it's not exactly 0 or 2pi for step calc
+        else: # Arc is too small (a line)
+            return
+
+
+    # Determine the number of segments based on the sweep and desired density
+    num_segments = max(2, int(abs(delta_angle) * segments_per_radian)) # At least 2 segments for a polygon
+    angle_step = delta_angle / num_segments
+
+    points = []
+
+    # Outer edge points (CCW)
+    for i in range(num_segments + 1):
+        angle = arc_segment_start_rad_ccw + i * angle_step # Iterate CCW
+        x = cx + outer_radius * math.cos(angle)
+        y = cy - outer_radius * math.sin(angle) # Pygame Y is inverted from math standard
+        points.append((x, y))
+
+    # Inner edge points (CW relative to the outer sweep, so iterate backwards from the stop angle)
+    for i in range(num_segments + 1):
+        angle = (arc_segment_start_rad_ccw + delta_angle) - (i * angle_step) # Iterate CW
+        x = cx + inner_radius * math.cos(angle)
+        y = cy - inner_radius * math.sin(angle) # Pygame Y is inverted
+        points.append((x, y))
+
+    if len(points) >= 3:
+        try:
+            pygame.draw.polygon(surface, color, points, 0) # width=0 for filled polygon
+        except TypeError as e:
+            print(f"Error drawing thick_arc polygon: {e}. Points: {len(points)}")
+            # print(f"Sample points: {points[:3]} ... {points[-3:]}")
+    # else:
+    #     print(f"Warning: Not enough points for thick_arc polygon: {len(points)}")
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
     def __init__(self, x, y,has_gravity, random_color, color, size_range, lifetime=PARTICLE_LIFETIME, max_speed=PARTICLE_MAX_SPEED): # Add params
@@ -429,23 +530,61 @@ class CircleWall:
                 if self.radius < self.target_radius: self.radius = self.target_radius
 
     def draw(self, surface):
-        current_radius_int = int(self.radius)
-        if current_radius_int>600:
-            return #don't draw too large circle for performance
-        if current_radius_int <= 0: return
-        rect = pygame.Rect(self.center_x - current_radius_int, self.center_y - current_radius_int,
-                           2 * current_radius_int, 2 * current_radius_int)
-        if abs(self.arc_start_angle_pygame - self.arc_end_angle_pygame) < 0.01 or current_radius_int < self.thickness:
-             pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), current_radius_int, self.thickness)
-        else:
-             try:
-                pygame.draw.arc(surface, self.color, rect,
-                                self.arc_start_angle_pygame,
-                                self.arc_end_angle_pygame,
-                                self.thickness)
-             except ValueError:
-                 pygame.draw.circle(surface, self.color, (self.center_x, self.center_y), current_radius_int, self.thickness)
+            current_radius_int = int(self.radius)
+            center_line_radius = self.radius # Readability
 
+            if center_line_radius <= self.thickness / 2:
+                return
+            # Optimization for very large/distant circles
+            if current_radius_int > SCREEN_HEIGHT and NUM_CIRCLES > 15 : # Or some other heuristic
+                if self.radius > INITIAL_RADIUS + (NUM_CIRCLES - 7) * RADIUS_STEP:
+                    return
+
+
+            inner_r = center_line_radius - self.thickness / 2
+            outer_r = center_line_radius + self.thickness / 2
+
+            if inner_r < 0: inner_r = 0
+            if outer_r <= inner_r: return
+
+            # Get gap boundaries in MATH RADIANS (CCW, 0=East)
+            # These are assumed to be correctly calculated and stored in the CircleWall instance
+            # (e.g., updated in self.update along with rotation)
+            gap_start_math_rad = normalize_angle_for_sweep(self.gap_center_rad - self.gap_width_rad / 2)
+            gap_end_math_rad   = normalize_angle_for_sweep(self.gap_center_rad + self.gap_width_rad / 2)
+
+            # The wall segment starts where the gap ends (CCW) and ends where the gap starts (CCW).
+            wall_arc_start_ccw = gap_end_math_rad
+            wall_arc_stop_ccw  = gap_start_math_rad
+
+            # Determine number of segments dynamically
+            # More segments for larger radius or larger angular sweep
+            angular_sweep_for_segments = wall_arc_stop_ccw - wall_arc_start_ccw
+            if angular_sweep_for_segments < 0:
+                angular_sweep_for_segments += 2 * math.pi
+            
+            # Ensure a minimum number of segments for small arcs, and more for larger ones
+            # segments_count = max(6, int(center_line_radius / 10) + int(angular_sweep_for_segments * 5))
+            segments_density_per_radian = 10 # Default, can be adjusted
+            if center_line_radius > 150:
+                segments_density_per_radian = 15
+            elif center_line_radius > 300:
+                segments_density_per_radian = 20
+
+
+            # Check if the gap is almost non-existent (i.e., draw a full ring)
+            if abs(self.gap_width_rad) < 0.01: # Very small gap, treat as full circle
+                # For a full ring, we can draw from 0 to 2*pi
+                draw_thick_arc(surface, self.color, (self.center_x, self.center_y),
+                            inner_r, outer_r,
+                            0, 2 * math.pi - 0.0001, # Slightly less than 2*pi to avoid segment issues
+                            segments_per_radian=segments_density_per_radian)
+            else:
+                draw_thick_arc(surface, self.color, (self.center_x, self.center_y),
+                            inner_r, outer_r,
+                            wall_arc_start_ccw, wall_arc_stop_ccw,
+                            segments_per_radian=segments_density_per_radian)
+        
     def is_angle_in_gap(self, ball_angle_math):
         return is_angle_in_gap(ball_angle_math, self.gap_center_rad, self.gap_width_rad)
 
