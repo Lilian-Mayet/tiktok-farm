@@ -5,24 +5,34 @@ import random
 import pygame.midi 
 import mido  # <-- ADD THIS
 
+
 # --- Constantes ---
 SCREEN_WIDTH = 450
 SCREEN_HEIGHT = 800
 CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2.8
 WHITE = (255, 255, 255)
+GREEN = (0,255,0)
 BLACK = (0, 0, 0)
 RED = (255, 50, 50)       # Player 1 color
 BLUE = (50, 150, 255)     # Player 2 color
 CIRCLE_COLOR = (255, 255, 255) # Circle wall color
 OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
-PARTICLE_COLOR = (150, 150, 150) # Color for disappearance effect
+PARTICLE_COLOR = (220, 220, 220) # Color for disappearance effect
 
 # --- TITLE CONSTANTS ---
-TITLE_TEXT = "Who will win?"
-TITLE_FONT_SIZE = 48
-TITLE_COLOR = WHITE
+TITLE_TEXT = "MARIO or LUIGI?"
+TITLE_FONT_SIZE = 52
+TITLE_COLOR = BLUE
 TITLE_TOP_MARGIN = 15
+TITLE_OUTLINE_COLOR = BLACK # Ou une autre couleur contrastante
+TITLE_OUTLINE_OFFSET = 2    # Épaisseur de l'outline en pixels (décalage)
 # --- END TITLE CONSTANTS ---
+# --- TEXT STYLING ---
+MAIN_FONT_PATH = "font/TikTokDisplay-Bold.ttf" # Mettez le chemin vers votre police .ttf ici
+BOLD_FONT_PATH = "font/TikTokText-Bold.ttf"# Mettez le chemin vers une police grasse .ttf ici
+# --- END TEXT STYLING ---
+
+
 
 # --- SCORE PARTICLE CONSTANTS ---
 NUM_SCORE_PARTICLES = 15
@@ -31,6 +41,12 @@ SCORE_PARTICLE_MAX_SPEED = 80
 SCORE_PARTICLE_COLOR = WHITE
 # --- END SCORE PARTICLE CONSTANTS ---
 
+# --- BALL ENHANCEMENT CONSTANTS ---
+BALL_IMAGE_P1 = "img/mario.png" # Mettez le bon nom/chemin
+BALL_IMAGE_P2 = "img/luigi.png"
+BALL_TRAIL_LENGTH = 8  # Number of past positions to draw for the trail
+BALL_TRAIL_START_ALPHA = 120 # Starting transparency for the trail
+# --- END BALL ENHANCEMENT ---
 
 # --- BANNER CONSTANTS ---
 BANNER_HEIGHT = 135  # INCREASED HEIGHT to fit name and score
@@ -38,23 +54,27 @@ BANNER_ALPHA = 185   # Transparency (0=invisible, 255=opaque)
 BANNER_BG_COLOR = (30, 30, 30)
 BANNER_PADDING = 20 # Slightly more padding maybe
 BANNER_NAME_COLOR_P1 = RED
-BANNER_NAME_COLOR_P2 = BLUE
+BANNER_NAME_COLOR_P2 = GREEN
 BANNER_SCORE_COLOR = WHITE # Color for the score number
 BANNER_NAME_FONT_SIZE = 35
-BANNER_SCORE_FONT_SIZE = 50
+BANNER_SCORE_FONT_SIZE = 65
 BANNER_VERTICAL_SPACING = 2 # Small space between name and score
 # --- END BANNER CONSTANTS ---
+
+
+
+
 # --- MIDI Constants ---
 MIDI_DEVICE_ID = None # Keep device selection as before
 MIDI_INSTRUMENT = 0   # Still useful to set initially
 MIDI_FILENAME = "midiFiles/MarioBros.mid" # <-- ADD THIS - Change if your file has a different name
 MIDI_VELOCITY_FALLBACK = 100 # Velocity to use if MIDI file velocity is weird (optional)
-MIDI_PLAYBACK_VELOCITY = 160
+MIDI_PLAYBACK_VELOCITY = 255
 
-BALL_RADIUS = 9
+BALL_RADIUS = 12
 BALL_OUTLINE_WIDTH = 1
 INITIAL_BALL_SPEED = 180
-NUM_CIRCLES = 430
+NUM_CIRCLES = 40
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
 RADIUS_STEP = 35
@@ -76,6 +96,7 @@ PARTICLE_MAX_SPEED = 100
 
 # --- Initialisation Pygame ---
 pygame.init()
+pygame.mixer.init() 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dual Ball Circle Break")
 clock = pygame.time.Clock()
@@ -145,7 +166,7 @@ def load_midi_notes(filename):
 
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
-    def __init__(self, x, y,has_gravity, random_color, color, lifetime=PARTICLE_LIFETIME, max_speed=PARTICLE_MAX_SPEED): # Add params
+    def __init__(self, x, y,has_gravity, random_color, color, size_range, lifetime=PARTICLE_LIFETIME, max_speed=PARTICLE_MAX_SPEED): # Add params
         self.x = float(x)
         self.y = float(y)
         # Allow specific color or random if original color passed
@@ -162,7 +183,7 @@ class Particle:
         self.base_lifetime = lifetime # Store base for calculation
         self.has_gravity = has_gravity
 
-        self.initial_size = random.randint(2, 4)
+        self.initial_size = random.randint(size_range[0], size_range[1])
         self.size = float(self.initial_size)
 
     def update(self, dt):
@@ -190,7 +211,7 @@ class Particle:
                  pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), draw_size, draw_size))
 
 class Ball:
-    def __init__(self, x, y, radius, color, outline_color, outline_width, name, initial_vx, initial_vy):
+    def __init__(self, x, y, radius, color, outline_color, outline_width, name, initial_vx, initial_vy, image_path=None):
         self.x = float(x)
         self.y = float(y)
         self.radius = radius
@@ -209,6 +230,19 @@ class Ball:
         # Énergie Totale (constante que l'on veut maintenir)
         self.total_energy = initial_ke + initial_pe
         self.score = 0
+        self.trail_positions = [] # List to store (x, y) tuples
+
+        # --- AJOUT IMAGE ---
+        self.image_surf = None
+        if image_path:
+            try:
+                original_image = pygame.image.load(image_path).convert_alpha()
+                # Scale image to fit inside the ball (minus a small margin)
+                image_diameter = int(self.radius * 2 * 0.85) # 85% of ball diameter
+                self.image_surf = pygame.transform.smoothscale(original_image, (image_diameter, image_diameter))
+            except pygame.error as e:
+                print(f"Warning: Could not load ball image '{image_path}': {e}")
+        # --- FIN AJOUT IMAGE ---
 
     def update(self, dt):
             # --- MODIFICATION : Méthode update complète avec conservation d'énergie ---
@@ -258,10 +292,35 @@ class Ball:
 
     def draw(self, surface):
         pos = (int(self.x), int(self.y))
+        # --- AJOUT TRAIL DRAWING (Dessiner la trainée DERRIÈRE la balle) ---
+        if self.trail_positions:
+            # Calculate alpha step for fading
+            alpha_step = BALL_TRAIL_START_ALPHA / len(self.trail_positions) if len(self.trail_positions) > 0 else BALL_TRAIL_START_ALPHA
+
+            for i, trail_pos in enumerate(reversed(self.trail_positions)): # Draw oldest first
+                # Trail circles get smaller and more transparent
+                current_radius = int(self.radius * (1 - (i / len(self.trail_positions))) * 0.7) # Smaller trail
+                current_alpha = int(BALL_TRAIL_START_ALPHA - (i * alpha_step))
+                current_alpha = max(0, min(255, current_alpha)) # Clamp alpha
+
+                if current_radius > 0 and current_alpha > 0:
+                    # Create a temporary surface for each trail segment to handle alpha
+                    trail_segment_surf = pygame.Surface((current_radius*2, current_radius*2), pygame.SRCALPHA)
+                    pygame.draw.circle(trail_segment_surf, (*self.color, current_alpha),
+                                       (current_radius, current_radius), current_radius)
+                    surface.blit(trail_segment_surf, (int(trail_pos[0]) - current_radius, int(trail_pos[1]) - current_radius))
+        # --- FIN AJOUT TRAIL ---
         # Draw outline first
         pygame.draw.circle(surface, self.outline_color, pos, self.radius + self.outline_width)
         # Draw main ball color
         pygame.draw.circle(surface, self.color, pos, self.radius)
+
+        # --- AJOUT IMAGE DRAWING ---
+        if self.image_surf:
+            # Center the image inside the ball
+            img_rect = self.image_surf.get_rect(center=pos)
+            surface.blit(self.image_surf, img_rect)
+        # --- FIN AJOUT IMAGE ---
 
     def reflect_velocity(self, nx, ny):
             # --- MODIFICATION : Simplifier maintenant que update() gère l'énergie ---
@@ -369,6 +428,16 @@ midi_output = pygame.midi.Output(0)
 if midi_output:
      midi_output.set_instrument(MIDI_INSTRUMENT, channel=0)
 
+coin_sound = None # Initialiser à None
+try:
+    coin_sound_path = "mp3/mario_coin.mp3" # Assure-toi que le fichier est dans le bon dossier
+    coin_sound = pygame.mixer.Sound(coin_sound_path)
+    coin_sound.set_volume(0.01) # <-- Optionnel: Ajuste le volume (0.0 à 1.0)
+    print(f"Loaded sound: {coin_sound_path}")
+except pygame.error as e:
+    print(f"Warning: Could not load sound file '{coin_sound_path}': {e}")
+# --- Fin chargement son ---
+
 # --- Logique Principale (Modifiée pour 2 balles, score, effets) ---
 def main():
     # --- Load MIDI Notes Sequence ---
@@ -377,33 +446,42 @@ def main():
     # --- Create Banner Surface ---
     banner_surface = pygame.Surface((SCREEN_WIDTH, BANNER_HEIGHT), pygame.SRCALPHA)
     TRANSPARENT_BANNER_BG = (*BANNER_BG_COLOR, BANNER_ALPHA)
-     # --- Create Banner Fonts ---
-    banner_name_font = pygame.font.Font(None, BANNER_NAME_FONT_SIZE)
-    banner_score_font = pygame.font.Font(None, BANNER_SCORE_FONT_SIZE)
+    # --- Fonts (TikTok Style) ---
+    try:
+        # Use custom fonts if paths are provided, otherwise default
+        banner_name_font = pygame.font.Font(MAIN_FONT_PATH, BANNER_NAME_FONT_SIZE)
+        banner_score_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, BANNER_SCORE_FONT_SIZE)
+        title_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, TITLE_FONT_SIZE)
+        print("Custom fonts loaded (or default if paths were None).")
+    except Exception as e:
+        print(f"Warning: Could not load custom font(s). Using Pygame default. Error: {e}")
+        banner_name_font = pygame.font.Font(None, BANNER_NAME_FONT_SIZE)
+        banner_score_font = pygame.font.Font(None, BANNER_SCORE_FONT_SIZE)
+        title_font = pygame.font.Font(None, TITLE_FONT_SIZE)
+    # --- END Fonts ---
 
-    # --- ADD TITLE FONT ---
-    title_font = pygame.font.Font(None, TITLE_FONT_SIZE)
-    # --- END TITLE FONT ---
-
-    # --- Render Title (Do this once) ---
-    title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
-    title_rect = title_surf.get_rect(centerx=SCREEN_WIDTH // 2, top=TITLE_TOP_MARGIN)
+    # --- Calculate Title Position (Can still be done once if text is static) ---
+    # We need a rect to know the final centered position
+    temp_title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
+    title_center_x = SCREEN_WIDTH // 2
+    title_center_y = TITLE_TOP_MARGIN + temp_title_surf.get_height() // 2
+    # --- End Title Position Calculation ---
 
 
     # --- Création des objets ---
     balls = []
     # Balle 1 (Rouge)
     angle_start1 = random.uniform(math.pi / 4, 3 * math.pi / 4) # Start upwards-left
-    ball1 = Ball(CENTER_X - 10, CENTER_Y, BALL_RADIUS, RED, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Player 1",
+    ball1 = Ball(CENTER_X - 10, CENTER_Y, BALL_RADIUS, RED, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Mario ",
                  INITIAL_BALL_SPEED * math.cos(angle_start1),
-                 INITIAL_BALL_SPEED * math.sin(angle_start1))
+                 INITIAL_BALL_SPEED * math.sin(angle_start1),image_path=BALL_IMAGE_P1)
     balls.append(ball1)
 
     # Balle 2 (Bleue)
     angle_start2 = random.uniform(5 * math.pi / 4, 7 * math.pi / 4) # Start downwards-right
-    ball2 = Ball(CENTER_X + 10, CENTER_Y, BALL_RADIUS, BLUE, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Player 2",
+    ball2 = Ball(CENTER_X + 10, CENTER_Y, BALL_RADIUS, GREEN, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Luigi",
                  INITIAL_BALL_SPEED * math.cos(angle_start2),
-                 INITIAL_BALL_SPEED * math.sin(angle_start2))
+                 INITIAL_BALL_SPEED * math.sin(angle_start2),image_path=BALL_IMAGE_P2)
     balls.append(ball2)
 
     circles = []
@@ -483,6 +561,10 @@ def main():
 
                                     print(f"{ball.name} passed through circle {current_circle.radius:.0f}")
                                     ball.add_score(1)
+                                     # --- AJOUTER LA LIGNE SUIVANTE ---
+                                    if coin_sound: # Vérifie si le son a été chargé
+                                        coin_sound.play()
+                                    # --- FIN AJOUT ---
 
                                     # Créer l'effet de particules
                                     broken_circle_radius = current_circle.radius
@@ -493,7 +575,7 @@ def main():
                                         p_angle = random.uniform(0, 2*math.pi)
                                         px = broken_circle_center_x + broken_circle_radius * math.cos(p_angle)
                                         py = broken_circle_center_y - broken_circle_radius * math.sin(p_angle) # Y down
-                                        particles.append(Particle(px, py,has_gravity=True,random_color=True, color  = None))
+                                        particles.append(Particle(px, py,has_gravity=True,random_color=True, color  = None,size_range=[1,5]))
 
 
                                     circles.pop(0)
@@ -576,21 +658,42 @@ def main():
 
         # --- Dessin ---
         screen.fill(BLACK)
-        # --- Draw Title ---
-        screen.blit(title_surf, title_rect)
-        # --- End Draw Title ---
+
 
         # Dessiner les cercles
         for circle in circles:
             circle.draw(screen)
 
-        # Dessiner les particules
-        for particle in particles:
-            particle.draw(screen)
+
 
         # Dessiner les balles
         for ball in balls:
             ball.draw(screen)
+
+
+
+
+        # --- Draw Title with Outline ---
+        # Define offsets for the outline (8 directions)
+        outline_offsets = [
+            (-TITLE_OUTLINE_OFFSET, -TITLE_OUTLINE_OFFSET), (0, -TITLE_OUTLINE_OFFSET), (+TITLE_OUTLINE_OFFSET, -TITLE_OUTLINE_OFFSET),
+            (-TITLE_OUTLINE_OFFSET, 0)                     ,                          (+TITLE_OUTLINE_OFFSET, 0)                     ,
+            (-TITLE_OUTLINE_OFFSET, +TITLE_OUTLINE_OFFSET), (0, +TITLE_OUTLINE_OFFSET), (+TITLE_OUTLINE_OFFSET, +TITLE_OUTLINE_OFFSET),
+        ]
+
+        # 1. Draw the outline layers first
+        for dx, dy in outline_offsets:
+            outline_surf = title_font.render(TITLE_TEXT, True, TITLE_OUTLINE_COLOR)
+            # Position each outline layer offset from the center
+            outline_rect = outline_surf.get_rect(center=(title_center_x + dx, title_center_y + dy))
+            screen.blit(outline_surf, outline_rect)
+
+        # 2. Draw the main text layer on top
+        main_title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
+        main_title_rect = main_title_surf.get_rect(center=(title_center_x, title_center_y))
+        screen.blit(main_title_surf, main_title_rect)
+        # --- End Draw Title ---
+
 
        # --- Préparer et Dessiner le Bandeau ---
         # 1. Fill banner background (will be made transparent later)
@@ -636,7 +739,7 @@ def main():
             center_y = banner_y_offset + p1_score_rect.centery # Add banner offset
             for _ in range(NUM_SCORE_PARTICLES):
                  # Use specific score particle properties
-                 particles.append(Particle(center_x, center_y,  has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR))
+                 particles.append(Particle(center_x, center_y,  has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR,size_range= [2,10]))
             balls[0].just_scored = False # Reset flag
 
         # Player 2 Score Particles
@@ -644,15 +747,18 @@ def main():
             center_x = p2_score_rect.centerx
             center_y = banner_y_offset + p2_score_rect.centery # Add banner offset
             for _ in range(NUM_SCORE_PARTICLES):
-                 particles.append(Particle(center_x, center_y, has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR))
+                 particles.append(Particle(center_x, center_y, has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR,size_range= [2,10]))
             balls[1].just_scored = False # Reset flag
         # --- !! END SCORE PARTICLE TRIGGER !! ---
         # --- Blit the transparent banner onto the main screen ---
         screen.blit(banner_surface, (0, SCREEN_HEIGHT - BANNER_HEIGHT))
         # --- Fin Dessin Bandeau ---
 
-        # --- Make sure old score drawing is removed ---
+       
 
+                # Dessiner les particules
+        for particle in particles:
+            particle.draw(screen)
         pygame.display.flip()
 
     # --- Fin ---
