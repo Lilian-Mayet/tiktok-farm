@@ -10,7 +10,9 @@ import mido  # <-- ADD THIS
 SCREEN_HEIGHT = 800
 SCREEN_WIDTH = SCREEN_HEIGHT* (9/16)
 
-CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2.8
+# NOUVEAU CENTRE DE JEU (plus bas)
+GAME_CENTER_Y_OFFSET = 0 # Combien descendre le centre du jeu
+CENTER_X, CENTER_Y = SCREEN_WIDTH // 2, (SCREEN_HEIGHT // 2.5) + GAME_CENTER_Y_OFFSET # Ajusté
 WHITE = (255, 255, 255)
 GREEN = (0,255,0)
 BLACK = (0, 0, 0)
@@ -20,14 +22,30 @@ CIRCLE_COLOR = (255, 255, 255) # Circle wall color
 OUTLINE_COLOR = (100, 100, 100)   # Ball outline color
 PARTICLE_COLOR = (220, 220, 220) # Color for disappearance effect
 
-# --- TITLE CONSTANTS ---
-TITLE_TEXT = "MARIO or LUIGI?"
-TITLE_FONT_SIZE = 52
-TITLE_COLOR = BLUE
-TITLE_TOP_MARGIN = 15
-TITLE_OUTLINE_COLOR = BLACK # Ou une autre couleur contrastante
-TITLE_OUTLINE_OFFSET = 2    # Épaisseur de l'outline en pixels (décalage)
-# --- END TITLE CONSTANTS ---
+# --- TEXT UI CONSTANTS (Replaces Banner & Title) ---
+UI_TOP_MARGIN = 30         # Marge du haut pour les éléments UI
+UI_SIDE_PADDING = 15       # Marge latérale pour les éléments UI
+UI_ELEMENT_SPACING = 15    # Espace vertical entre les éléments (titre, scores)
+
+# Style pour les "bulles" de texte
+TEXT_BOX_BG_COLOR = WHITE
+TEXT_BOX_ALPHA = 230       # Légère transparence pour le fond de la bulle
+TEXT_BOX_PADDING = 8       # Padding intérieur de la bulle de texte
+TEXT_BOX_BORDER_RADIUS = 12 # Rayon des coins arrondis
+
+# Fonts (utiliser les mêmes MAIN_FONT_PATH, BOLD_FONT_PATH)
+TITLE_TEXT_CONTENT = "MARIO or LUIGI?" # Renommé pour clarté
+TITLE_TEXT_FONT_SIZE = 38    # Ajusté
+TITLE_TEXT_COLOR = BLACK     # Texte noir sur fond blanc
+TITLE_OUTLINE_SIZE = 0       # On n'utilise plus l'outline direct sur le texte
+
+PLAYER_NAME_FONT_SIZE = 22
+PLAYER_NAME_COLOR_P1 = RED
+PLAYER_NAME_COLOR_P2 = GREEN
+PLAYER_SCORE_FONT_SIZE = 40
+PLAYER_SCORE_COLOR = (30, 30, 30) # Gris foncé pour le score
+
+# --- END TEXT UI CONSTANTS ---
 # --- TEXT STYLING ---
 MAIN_FONT_PATH = "font/TikTokDisplay-Bold.ttf" # Mettez le chemin vers votre police .ttf ici
 BOLD_FONT_PATH = "font/TikTokText-Bold.ttf"# Mettez le chemin vers une police grasse .ttf ici
@@ -72,9 +90,9 @@ MIDI_FILENAME = "midiFiles/MarioBros.mid" # <-- ADD THIS - Change if your file h
 MIDI_VELOCITY_FALLBACK = 100 # Velocity to use if MIDI file velocity is weird (optional)
 MIDI_PLAYBACK_VELOCITY = 255
 
-BALL_RADIUS = 12
-BALL_OUTLINE_WIDTH = 1
-INITIAL_BALL_SPEED = 180
+BALL_RADIUS = 20
+BALL_OUTLINE_WIDTH = 2
+INITIAL_BALL_SPEED = 160
 NUM_CIRCLES = 40
 INITIAL_RADIUS = 90
 #RADIUS_STEP = (SCREEN_HEIGHT // 2 - INITIAL_RADIUS - BALL_RADIUS * 5) / (NUM_CIRCLES -1) if NUM_CIRCLES > 1 else 0 # More space
@@ -86,7 +104,7 @@ INITIAL_GAP_CENTER_ANGLE_RAD = 3 * math.pi / 2
 BASE_ROTATION_SPEED_RAD_PER_SEC = math.pi / 2 # Slightly slower rotation
 ROTATION_SLOWDOWN_FACTOR = 0.92
 CIRCLE_SHRINK_SPEED = 45.0 # Shrink speed
-FPS = 60
+FPS = 120
 GRAVITY_ACCELERATION = 350.0 # Slightly less gravity
 
 
@@ -164,6 +182,30 @@ def load_midi_notes(filename):
     except Exception as e:
         print(f"Error loading MIDI file '{filename}': {e}")
         return []
+
+
+def draw_rounded_rect(surface, rect, color, corner_radius):
+    """
+    Dessine un rectangle avec des coins arrondis.
+    Assumes rect is a pygame.Rect.
+    Color est un tuple (R, G, B) ou (R, G, B, A) si surface supporte alpha.
+    """
+    if corner_radius < 0:
+        raise ValueError(f"Corner radius {corner_radius} must be >= 0")
+    if corner_radius > rect.width // 2 or corner_radius > rect.height // 2:
+        # Si le rayon est trop grand, dessiner un cercle/ellipse ou un rect normal
+        pygame.draw.rect(surface, color, rect)
+        return
+
+    # Dessiner les 4 rectangles qui forment la croix centrale
+    pygame.draw.rect(surface, color, (rect.left + corner_radius, rect.top, rect.width - 2 * corner_radius, rect.height))
+    pygame.draw.rect(surface, color, (rect.left, rect.top + corner_radius, rect.width, rect.height - 2 * corner_radius))
+
+    # Dessiner les 4 cercles pour les coins
+    pygame.draw.circle(surface, color, (rect.left + corner_radius, rect.top + corner_radius), corner_radius)
+    pygame.draw.circle(surface, color, (rect.right - corner_radius -1, rect.top + corner_radius), corner_radius) # -1 pour ajustement pixel
+    pygame.draw.circle(surface, color, (rect.left + corner_radius, rect.bottom - corner_radius -1), corner_radius)
+    pygame.draw.circle(surface, color, (rect.right - corner_radius -1, rect.bottom - corner_radius -1), corner_radius)
 
 # --- Classe Particle (Pour l'effet de disparition) ---
 class Particle:
@@ -388,7 +430,7 @@ class CircleWall:
 
     def draw(self, surface):
         current_radius_int = int(self.radius)
-        if current_radius_int>500:
+        if current_radius_int>600:
             return #don't draw too large circle for performance
         if current_radius_int <= 0: return
         rect = pygame.Rect(self.center_x - current_radius_int, self.center_y - current_radius_int,
@@ -448,25 +490,17 @@ def main():
     banner_surface = pygame.Surface((SCREEN_WIDTH, BANNER_HEIGHT), pygame.SRCALPHA)
     TRANSPARENT_BANNER_BG = (*BANNER_BG_COLOR, BANNER_ALPHA)
     # --- Fonts (TikTok Style) ---
+# --- Fonts (TikTok Style) ---
     try:
-        # Use custom fonts if paths are provided, otherwise default
-        banner_name_font = pygame.font.Font(MAIN_FONT_PATH, BANNER_NAME_FONT_SIZE)
-        banner_score_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, BANNER_SCORE_FONT_SIZE)
-        title_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, TITLE_FONT_SIZE)
-        print("Custom fonts loaded (or default if paths were None).")
+        title_ui_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, TITLE_TEXT_FONT_SIZE)
+        player_name_font = pygame.font.Font(MAIN_FONT_PATH, PLAYER_NAME_FONT_SIZE)
+        player_score_font = pygame.font.Font(BOLD_FONT_PATH or MAIN_FONT_PATH, PLAYER_SCORE_FONT_SIZE)
+        print("Custom fonts loaded.")
     except Exception as e:
-        print(f"Warning: Could not load custom font(s). Using Pygame default. Error: {e}")
-        banner_name_font = pygame.font.Font(None, BANNER_NAME_FONT_SIZE)
-        banner_score_font = pygame.font.Font(None, BANNER_SCORE_FONT_SIZE)
-        title_font = pygame.font.Font(None, TITLE_FONT_SIZE)
-    # --- END Fonts ---
-
-    # --- Calculate Title Position (Can still be done once if text is static) ---
-    # We need a rect to know the final centered position
-    temp_title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
-    title_center_x = SCREEN_WIDTH // 2
-    title_center_y = TITLE_TOP_MARGIN + temp_title_surf.get_height() // 2
-    # --- End Title Position Calculation ---
+        # ... (fallback to default fonts) ...
+        title_ui_font = pygame.font.Font(None, TITLE_TEXT_FONT_SIZE)
+        player_name_font = pygame.font.Font(None, PLAYER_NAME_FONT_SIZE)
+        player_score_font = pygame.font.Font(None, PLAYER_SCORE_FONT_SIZE)
 
 
     # --- Création des objets ---
@@ -560,7 +594,7 @@ def main():
 
             for ball in balls:
                 # Vérifier la collision de CETTE balle avec le current_circle
-                collision_dist = (current_circle.radius - CIRCLE_THICKNESS/2) - ball.radius
+                collision_dist = (current_circle.radius - CIRCLE_THICKNESS/2) - (ball.radius + ball.outline_width)
                 dx = ball.x - current_circle.center_x
                 dy = ball.y - current_circle.center_y
                 dist_sq = dx*dx + dy*dy
@@ -700,87 +734,117 @@ def main():
 
 
 
-        # --- Draw Title with Outline ---
-        # Define offsets for the outline (8 directions)
-        outline_offsets = [
-            (-TITLE_OUTLINE_OFFSET, -TITLE_OUTLINE_OFFSET), (0, -TITLE_OUTLINE_OFFSET), (+TITLE_OUTLINE_OFFSET, -TITLE_OUTLINE_OFFSET),
-            (-TITLE_OUTLINE_OFFSET, 0)                     ,                          (+TITLE_OUTLINE_OFFSET, 0)                     ,
-            (-TITLE_OUTLINE_OFFSET, +TITLE_OUTLINE_OFFSET), (0, +TITLE_OUTLINE_OFFSET), (+TITLE_OUTLINE_OFFSET, +TITLE_OUTLINE_OFFSET),
-        ]
+                # --- Dessiner les Éléments UI en Haut ---
+        current_ui_y = UI_TOP_MARGIN # Position Y de départ pour les éléments UI
 
-        # 1. Draw the outline layers first
-        for dx, dy in outline_offsets:
-            outline_surf = title_font.render(TITLE_TEXT, True, TITLE_OUTLINE_COLOR)
-            # Position each outline layer offset from the center
-            outline_rect = outline_surf.get_rect(center=(title_center_x + dx, title_center_y + dy))
-            screen.blit(outline_surf, outline_rect)
+        # 1. TITRE "MARIO or LUIGI?"
+        title_text_surf = title_ui_font.render(TITLE_TEXT_CONTENT, True, TITLE_TEXT_COLOR)
+        title_text_rect = title_text_surf.get_rect() # Obtenir la taille du texte
 
-        # 2. Draw the main text layer on top
-        main_title_surf = title_font.render(TITLE_TEXT, True, TITLE_COLOR)
-        main_title_rect = main_title_surf.get_rect(center=(title_center_x, title_center_y))
-        screen.blit(main_title_surf, main_title_rect)
-        # --- End Draw Title ---
+        # Créer le rectangle pour le fond de la bulle du titre
+        title_box_width = title_text_rect.width + 2 * TEXT_BOX_PADDING
+        title_box_height = title_text_rect.height + 2 * TEXT_BOX_PADDING
+        title_box_rect = pygame.Rect(
+            (SCREEN_WIDTH - title_box_width) // 2, # Centré horizontalement
+            current_ui_y,
+            title_box_width,
+            title_box_height
+        )
+        # Dessiner le fond de la bulle (semi-transparent)
+        title_box_bg_surf = pygame.Surface(title_box_rect.size, pygame.SRCALPHA)
+        draw_rounded_rect(title_box_bg_surf, title_box_bg_surf.get_rect(), (*TEXT_BOX_BG_COLOR, TEXT_BOX_ALPHA), TEXT_BOX_BORDER_RADIUS)
+        screen.blit(title_box_bg_surf, title_box_rect.topleft)
+
+        # Positionner et dessiner le texte du titre DESSUS la bulle
+        title_text_rect.center = title_box_rect.center
+        screen.blit(title_text_surf, title_text_rect)
+
+        current_ui_y += title_box_rect.height + UI_ELEMENT_SPACING # Mettre à jour Y pour le prochain élément
+
+        # 2. SCORES DES JOUEURS (côte à côte)
+        # Créer une surface temporaire pour contenir les deux scores, pour les centrer ensemble
+        scores_container_width = SCREEN_WIDTH - 2 * UI_SIDE_PADDING
+        # Estimer la hauteur max (plus grand entre nom et score + padding)
+        temp_name_h = player_name_font.get_height()
+        temp_score_h = player_score_font.get_height()
+        player_box_inner_height = temp_name_h + temp_score_h + TEXT_BOX_PADDING * 2 + BANNER_VERTICAL_SPACING #BANNER_VERTICAL_SPACING est ancien, renommer
+        player_box_height = player_box_inner_height # Hauteur pour la bulle d'un joueur
+
+        # --- Boîte pour Joueur 1 (Gauche) ---
+        p1_name_surf = player_name_font.render(balls[0].name, True, PLAYER_NAME_COLOR_P1)
+        p1_score_surf = player_score_font.render(str(balls[0].score), True, PLAYER_SCORE_COLOR)
+        # Largeur de la boîte basée sur le plus large entre nom et score
+        p1_content_width = max(p1_name_surf.get_width(), p1_score_surf.get_width())
+        p1_box_width = p1_content_width + 2 * TEXT_BOX_PADDING
+
+        p1_box_rect = pygame.Rect(
+            UI_SIDE_PADDING,
+            current_ui_y,
+            p1_box_width,
+            player_box_height
+        )
+        p1_box_bg_surf = pygame.Surface(p1_box_rect.size, pygame.SRCALPHA)
+        draw_rounded_rect(p1_box_bg_surf, p1_box_bg_surf.get_rect(), (*TEXT_BOX_BG_COLOR, TEXT_BOX_ALPHA), TEXT_BOX_BORDER_RADIUS)
+        screen.blit(p1_box_bg_surf, p1_box_rect.topleft)
+
+        # Positionner textes dans la boîte P1
+        p1_name_pos_x = p1_box_rect.left + (p1_box_rect.width - p1_name_surf.get_width()) // 2 # Centré dans la boite
+        p1_name_pos_y = p1_box_rect.top + TEXT_BOX_PADDING
+        screen.blit(p1_name_surf, (p1_name_pos_x, p1_name_pos_y))
+
+        p1_score_pos_x = p1_box_rect.left + (p1_box_rect.width - p1_score_surf.get_width()) // 2 # Centré
+        p1_score_pos_y = p1_name_pos_y + p1_name_surf.get_height() + BANNER_VERTICAL_SPACING # BANNER_VERTICAL_SPACING
+        screen.blit(p1_score_surf, (p1_score_pos_x, p1_score_pos_y))
 
 
-       # --- Préparer et Dessiner le Bandeau ---
-        # 1. Fill banner background (will be made transparent later)
-        banner_surface.fill(TRANSPARENT_BANNER_BG)
+        # --- Boîte pour Joueur 2 (Droite) ---
+        p2_name_surf = player_name_font.render(balls[1].name, True, PLAYER_NAME_COLOR_P2)
+        p2_score_surf = player_score_font.render(str(balls[1].score), True, PLAYER_SCORE_COLOR)
+        p2_content_width = max(p2_name_surf.get_width(), p2_score_surf.get_width())
+        p2_box_width = p2_content_width + 2 * TEXT_BOX_PADDING
+
+        p2_box_rect = pygame.Rect(
+            SCREEN_WIDTH - UI_SIDE_PADDING - p2_box_width,
+            current_ui_y,
+            p2_box_width,
+            player_box_height
+        )
+        p2_box_bg_surf = pygame.Surface(p2_box_rect.size, pygame.SRCALPHA)
+        draw_rounded_rect(p2_box_bg_surf, p2_box_bg_surf.get_rect(), (*TEXT_BOX_BG_COLOR, TEXT_BOX_ALPHA), TEXT_BOX_BORDER_RADIUS)
+        screen.blit(p2_box_bg_surf, p2_box_rect.topleft)
+
+        # Positionner textes dans la boîte P2
+        p2_name_pos_x = p2_box_rect.left + (p2_box_rect.width - p2_name_surf.get_width()) // 2
+        p2_name_pos_y = p2_box_rect.top + TEXT_BOX_PADDING
+        screen.blit(p2_name_surf, (p2_name_pos_x, p2_name_pos_y))
+
+        p2_score_pos_x = p2_box_rect.left + (p2_box_rect.width - p2_score_surf.get_width()) // 2
+        p2_score_pos_y = p2_name_pos_y + p2_name_surf.get_height() + BANNER_VERTICAL_SPACING # BANNER_VERTICAL_SPACING
+        screen.blit(p2_score_surf, (p2_score_pos_x, p2_score_pos_y))
 
 
-        # --- Player 1 Display (Left) ---
-        # Render Name
-        p1_name_text = balls[0].name
-        p1_name_surf = banner_name_font.render(p1_name_text, True, BANNER_NAME_COLOR_P1)
-        p1_name_rect = p1_name_surf.get_rect(topleft=(BANNER_PADDING, BANNER_PADDING // 2)) # Position name near top-left
-        banner_surface.blit(p1_name_surf, p1_name_rect)
-
-        # Render Score (Below Name)
-        p1_score_text = str(balls[0].score)
-        p1_score_surf = banner_score_font.render(p1_score_text, True, BANNER_SCORE_COLOR)
-        # Position score's top-left below name's bottom-left
-        p1_score_rect = p1_score_surf.get_rect(topleft=(p1_name_rect.left, p1_name_rect.bottom + BANNER_VERTICAL_SPACING))
-        banner_surface.blit(p1_score_surf, p1_score_rect)
-
-        # --- Player 2 Display (Right) ---
-        # Render Name
-        p2_name_text = balls[1].name
-        p2_name_surf = banner_name_font.render(p2_name_text, True, BANNER_NAME_COLOR_P2)
-        p2_name_rect = p2_name_surf.get_rect(topright=(SCREEN_WIDTH - BANNER_PADDING, BANNER_PADDING // 2)) # Position name near top-right
-        banner_surface.blit(p2_name_surf, p2_name_rect)
-
-        # Render Score (Below Name)
-        p2_score_text = str(balls[1].score)
-        p2_score_surf = banner_score_font.render(p2_score_text, True, BANNER_SCORE_COLOR)
-        # Position score's top-right below name's bottom-right
-        p2_score_rect = p2_score_surf.get_rect(topright=(p2_name_rect.right, p2_name_rect.bottom + BANNER_VERTICAL_SPACING))
-        banner_surface.blit(p2_score_surf, p2_score_rect)
+        # --- Décalage Y pour les particules de score (si elles sont toujours relatives aux boîtes de score) ---
+        # Note : les particules de score doivent maintenant être générées par rapport aux positions p1_score_rect.center et p2_score_rect.center
+        # qui sont maintenant en coordonnées d'écran (car on blit directement sur `screen`).
 
         # --- !! SCORE PARTICLE TRIGGER !! ---
-        # Check AFTER drawing the banner and calculating score rects
-        banner_y_offset = SCREEN_HEIGHT - BANNER_HEIGHT
-
-        # Player 1 Score Particles
+        # La logique ici doit être ajustée car p1_score_rect et p2_score_rect sont maintenant
+        # des rects locaux à leur "boîte" de texte. Il faut calculer leur position globale.
         if balls[0].just_scored:
-            # Spawn particles around the center of the score text
-            center_x = p1_score_rect.centerx
-            center_y = banner_y_offset + p1_score_rect.centery # Add banner offset
+            # Position globale du centre du score P1
+            score_p1_global_centerx = p1_score_pos_x + p1_score_surf.get_width() // 2
+            score_p1_global_centery = p1_score_pos_y + p1_score_surf.get_height() // 2
             for _ in range(NUM_SCORE_PARTICLES):
-                 # Use specific score particle properties
-                 particles.append(Particle(center_x, center_y,  has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR,size_range= [2,10]))
-            balls[0].just_scored = False # Reset flag
+                 particles.append(Particle(score_p1_global_centerx, score_p1_global_centery, has_gravity=False,random_color=True, color = SCORE_PARTICLE_COLOR,size_range= [2,10], lifetime=SCORE_PARTICLE_LIFETIME, max_speed=SCORE_PARTICLE_MAX_SPEED))
+            balls[0].just_scored = False
 
-        # Player 2 Score Particles
         if balls[1].just_scored:
-            center_x = p2_score_rect.centerx
-            center_y = banner_y_offset + p2_score_rect.centery # Add banner offset
+            score_p2_global_centerx = p2_score_pos_x + p2_score_surf.get_width() // 2
+            score_p2_global_centery = p2_score_pos_y + p2_score_surf.get_height() // 2
             for _ in range(NUM_SCORE_PARTICLES):
-                 particles.append(Particle(center_x, center_y, has_gravity=False,random_color=False, color = SCORE_PARTICLE_COLOR,size_range= [2,10]))
-            balls[1].just_scored = False # Reset flag
-        # --- !! END SCORE PARTICLE TRIGGER !! ---
-        # --- Blit the transparent banner onto the main screen ---
-        screen.blit(banner_surface, (0, SCREEN_HEIGHT - BANNER_HEIGHT))
-        # --- Fin Dessin Bandeau ---
-
+                 particles.append(Particle(score_p2_global_centerx, score_p2_global_centery, has_gravity=False,random_color=True, color = SCORE_PARTICLE_COLOR,size_range= [2,10], lifetime=SCORE_PARTICLE_LIFETIME, max_speed=SCORE_PARTICLE_MAX_SPEED))
+            balls[1].just_scored = False
+        # --- FIN Dessin UI ---
        
 
                 # Dessiner les particules
