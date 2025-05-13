@@ -502,6 +502,32 @@ def main():
     particles = [] # Liste pour gérer les particules actives
 
     # --- Boucle de jeu ---
+
+    game_started = False
+    while not game_started:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # --- Cleanup before exit if quitting here ---
+                if midi_output:
+                    midi_output.close()
+                pygame.midi.quit()
+                pygame.mixer.quit()
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    game_started = True
+                if event.key == pygame.K_ESCAPE: # Allow escape to quit from start screen
+                    # --- Cleanup before exit if quitting here ---
+                    if midi_output:
+                        midi_output.close()
+                    pygame.midi.quit()
+                    pygame.mixer.quit()
+                    pygame.quit()
+                    sys.exit()
+
+
+
     running = True
     while running:
         dt = clock.tick(FPS) / 1000.0
