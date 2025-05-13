@@ -39,10 +39,10 @@ TITLE_TEXT_FONT_SIZE = 38    # Ajusté
 TITLE_TEXT_COLOR = BLACK     # Texte noir sur fond blanc
 TITLE_OUTLINE_SIZE = 0       # On n'utilise plus l'outline direct sur le texte
 
-PLAYER_NAME_FONT_SIZE = 22
+PLAYER_NAME_FONT_SIZE = 32
 PLAYER_NAME_COLOR_P1 = RED
 PLAYER_NAME_COLOR_P2 = GREEN
-PLAYER_SCORE_FONT_SIZE = 40
+PLAYER_SCORE_FONT_SIZE = 45
 PLAYER_SCORE_COLOR = (30, 30, 30) # Gris foncé pour le score
 
 # --- END TEXT UI CONSTANTS ---
@@ -507,7 +507,7 @@ def main():
     balls = []
     # Balle 1 (Rouge)
     angle_start1 = random.uniform(math.pi / 4, 3 * math.pi / 4) # Start upwards-left
-    ball1 = Ball(CENTER_X - 10, CENTER_Y, BALL_RADIUS, RED, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Mario ",
+    ball1 = Ball(CENTER_X - 10, CENTER_Y, BALL_RADIUS, RED, OUTLINE_COLOR, BALL_OUTLINE_WIDTH, "Mario",
                  INITIAL_BALL_SPEED * math.cos(angle_start1),
                  INITIAL_BALL_SPEED * math.sin(angle_start1),image_path=BALL_IMAGE_P1)
     balls.append(ball1)
@@ -700,6 +700,8 @@ def main():
 
                                         # Move to the next note in the sequence
                                         current_note_index += 1
+                                        if current_note_index==len(loaded_notes):
+                                            current_note_index =1
 
                                     except Exception as e:
                                             print(f"Error playing MIDI note: {e}")
